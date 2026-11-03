@@ -41,6 +41,9 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'Physics validation failed.' }
 }
 if ($BuildOnly) { exit 0 }
+# Import the sky texture before runtime, including when launching a fresh checkout.
+& $GodotPath --headless --editor --path $projectRoot --import
+if ($LASTEXITCODE -ne 0) { throw 'Godot asset import failed.' }
 $godotArguments = @('--path', $projectRoot)
 if ($Headless) { $godotArguments += '--headless' }
 $userArguments = @()

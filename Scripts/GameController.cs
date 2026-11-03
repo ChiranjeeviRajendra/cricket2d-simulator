@@ -14,6 +14,7 @@ public partial class GameController : Node2D
     private MainMenu _menu = null!;
     private SimulationSettings _settings = null!;
     private BattingSettings _batting = null!;
+    private FieldSettings _field = null!;
     private bool _smokeMenuStarted, _smokeMenuComplete, _smokeExitRequested;
     private bool _paused;
     private bool _smokeTest;
@@ -52,6 +53,18 @@ public partial class GameController : Node2D
         }
         _settings = settings;
         _batting = batting;
+        try
+        {
+            using var fieldFile = Godot.FileAccess.Open("res://Config/field.json", Godot.FileAccess.ModeFlags.Read);
+            if (fieldFile == null) throw new InvalidOperationException("Cannot read Config/field.json.");
+            _field = FieldSettings.FromJson(fieldFile.GetAsText());
+        }
+        catch (Exception ex)
+        {
+            GD.PushError($"Cannot load field configuration: {ex.Message}");
+            GetTree().Quit(1);
+            return;
+        }
         _smokeTest = args.Contains("--smoke-test");
         _capturePreview = args.Contains("--capture-preview");
         var menuCanvas = new CanvasLayer { Layer = 10 };
@@ -79,7 +92,7 @@ public partial class GameController : Node2D
             _ground.InterpolationPaused = _paused;
             return;
         }
-        _simulation = new(_settings, _batting);
+        _simulation = new(_settings, _batting, _field);
         _ground = new GroundView { Simulation = _simulation };
         AddChild(_ground);
         var canvas = new CanvasLayer();
@@ -485,7 +498,8 @@ public partial class GameController : Node2D
         {
             ("camera-left", new(FieldLayout.BatterReferenceX + 80, 4)),
             ("camera-right", new(FieldLayout.BatterReferenceX - 95, 12)),
-            ("camera-high", new(FieldLayout.BatterReferenceX + 10, 50))
+            ("camera-high", new(FieldLayout.BatterReferenceX + 10, 50)),
+            ("field-overview", new(PitchDimensions.WicketSeparation / 2, 180))
         })
         {
             _ground.SetCaptureBall(position);

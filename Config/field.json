@@ -1,0 +1,22 @@
+{
+  "Boundary": {
+    "LeftDistanceMetres": 40,
+    "RightDistanceMetres": 75,
+    "DepthRadiusMetres": 45,
+    "WidthMetres": 0.23,
+    "HeightMetres": 0.147,
+    "Restitution": 0.20,
+    "Friction": 0.40
+  },
+  "Barricade": {
+    "ClearGapMetres": 5,
+    "HeightMetres": 1.2,
+    "ThicknessMetres": 0.25,
+    "Restitution": null,
+    "Friction": null
+  },
+  "Parking": {
+    "VergeMetres": 1.5,
+    "WidthMetres": 20
+  }
+}

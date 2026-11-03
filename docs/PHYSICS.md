@@ -18,10 +18,15 @@ The setup panel and speed stats display **km/h**. Input is divided by 3.6 before
 | Bat total length from grip | 0.85 m |
 | Handle before blade starts | 0.28 m |
 | Blade capsule radius | 0.032 m |
-| Boundary left of batter's normal stance | 37 m |
-| Boundary right of batter's normal stance | 75 m |
+| Boundary left of batter's normal stance | 40 m (configurable) |
+| Boundary right of batter's normal stance | 75 m (configurable) |
+| Boundary wedge width / height | 0.23 m / 0.147 m |
+| Clear gap from outer wedge toe to barricade | 5 m |
+| Barricade height / thickness | 1.2 m / 0.25 m |
 
-Maximum height is the greatest ball-centre world y coordinate above ground during the current delivery. Maximum length is the greatest absolute horizontal distance from the fixed normal stance at x = 19.08 m, including either side and the incoming delivery. Boundary signs share this stance reference; pitching length continues to use the bowler-end wicket as its origin. Maxima are sampled at release, each physics substep and immediately before/after collision response. They are retained until the next delivery begins.
+Maximum height is the greatest ball-centre world y coordinate above ground during the current delivery. Maximum length is the greatest absolute horizontal distance from the fixed normal stance at x = 19.08 m, including either side and the incoming delivery. Boundary cushions share this stance reference; pitching length continues to use the bowler-end wicket as its origin. Maxima are sampled at release, each physics substep and immediately before/after collision response, including wedge and barricade contacts. They are retained until the next delivery begins.
+
+Boundary/wall dimensions and material response are configured in `Config/field.json`. Swept finite-radius contacts resolve against sloped wedge faces and the solid barricade's sides/top. Normal restitution dissipates energy; tangential friction changes both translation and spin. Slow supported balls slide or roll under gravity, and aerial balls can clear the objects. The barricade inherits the pitch's restitution/friction unless explicitly overridden. Foam defaults are uncalibrated tuning choices. [STADIUM.md](STADIUM.md) documents the solver and [BOUNDARY_REFERENCES.md](BOUNDARY_REFERENCES.md) records the research.
 
 References: [MCC pitch](https://www.lords.org/mcc/the-laws/the-pitch), [MCC creases](https://www.lords.org/mcc/the-laws/the-creases), [MCC wickets](https://www.lords.org/mcc/the-laws/the-wickets), [MCC ball](https://www.lords.org/mcc/the-laws/the-ball). The geometry does not implement every equipment law. A side view shows the bat's thickness; the bat's out-of-plane face width is not a separate collision axis.
 

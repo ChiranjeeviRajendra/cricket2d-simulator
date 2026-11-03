@@ -10,5 +10,6 @@
     <ProjectReference Include="../Core/Cricket.Physics.csproj" />
     <Compile Include="../Presentation/**/*.cs" Link="Presentation/%(Filename)%(Extension)" />
     <None Include="../Config/batsman.json" Link="Config/batsman.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Config/field.json" Link="Config/field.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
