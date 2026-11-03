@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Cricket.Physics;
 
 public static class PitchDimensions
@@ -24,8 +26,12 @@ public sealed record SimulationSettings
     public double GroundRestitution { get; init; } = 0.58;
     public double GroundFriction { get; init; } = 0.22;
     public double RollingResistance { get; init; } = 0.025;
-    public double BatMass { get; init; } = 1.15;
-    public double BatInertiaAboutGrip { get; init; } = 0.26;
+    // Curtis et al. (2021), table 1 mean mass/inertia, translated to a grip 0.10 m from the handle end.
+    public double BatMass { get; init; } = 1.17;
+    public double BatCentreOfMassFromGrip { get; init; } = 0.40;
+    public double BatInertiaAboutGrip { get; init; } = 0.2459;
+    [JsonIgnore] public double BatInertiaAboutCentreOfMass =>
+        BatInertiaAboutGrip - BatMass * BatCentreOfMassFromGrip * BatCentreOfMassFromGrip;
     public double BatRestitution { get; init; } = 0.50;
     public double BatFriction { get; init; } = 0.28;
     public double BatHalfThickness { get; init; } = 0.032;
@@ -38,14 +44,14 @@ public sealed record SimulationSettings
     public void Validate()
     {
         double[] positive = [BallMass, BallRadius, Gravity, BatMass, BatInertiaAboutGrip,
-            BatHalfThickness, BatLength, HandleLength];
+            BatHalfThickness, BatLength, HandleLength, BatInertiaAboutCentreOfMass];
         double[] nonNegative = [AirDensity, DragCoefficient, MagnusCoefficient, SpinDecay,
-            GroundFriction, RollingResistance, BatFriction];
+            GroundFriction, RollingResistance, BatFriction, BatCentreOfMassFromGrip];
         if (positive.Any(x => !double.IsFinite(x) || x <= 0) ||
             nonNegative.Any(x => !double.IsFinite(x) || x < 0) ||
             !double.IsFinite(GroundRestitution) || GroundRestitution is < 0 or > 1 ||
             !double.IsFinite(BatRestitution) || BatRestitution is < 0 or > 1 ||
-            HandleLength >= BatLength || Substeps is < 1 or > 32)
+            HandleLength >= BatLength || BatCentreOfMassFromGrip >= BatLength || Substeps is < 1 or > 32)
             throw new ArgumentException("Invalid physics coefficients. Check Config/physics.json.");
     }
 }

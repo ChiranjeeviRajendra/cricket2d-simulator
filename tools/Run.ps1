@@ -3,7 +3,8 @@ param(
     [switch]$BuildOnly,
     [switch]$Test,
     [switch]$Headless,
-    [switch]$SmokeTest
+    [switch]$SmokeTest,
+    [switch]$BattingPreview
 )
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -42,6 +43,9 @@ if ($Test) {
 if ($BuildOnly) { exit 0 }
 $godotArguments = @('--path', $projectRoot)
 if ($Headless) { $godotArguments += '--headless' }
-if ($SmokeTest) { $godotArguments += @('--', '--smoke-test') }
+$userArguments = @()
+if ($BattingPreview) { $userArguments += '--batting-preview' }
+if ($SmokeTest) { $userArguments += '--smoke-test' }
+if ($userArguments.Count -gt 0) { $godotArguments += @('--') + $userArguments }
 & $GodotPath @godotArguments
 exit $LASTEXITCODE

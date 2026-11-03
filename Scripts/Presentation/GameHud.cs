@@ -3,11 +3,10 @@ using Godot;
 
 namespace Cricket2D;
 
-/// <summary>Compact delivery telemetry. Setup is opened only through the A button.</summary>
+/// <summary>Compact delivery telemetry; practice navigation is handled by A/Enter and B/Escape.</summary>
 public partial class GameHud : Control
 {
     public DeliveryPanel DeliveryPanel { get; private set; } = null!;
-    public event Action? SetupRequested;
     private Label _speed = null!;
     private Label _maxSpeed = null!;
     private Label _maxLength = null!;
@@ -22,15 +21,6 @@ public partial class GameHud : Control
         _maxSpeed = Stat("MAX BALL SPEED", "0.0 km/h", 226);
         _maxLength = Stat("MAX LENGTH FROM BATTER", "0.00 m", 414);
         _maxHeight = Stat("MAX HEIGHT ABOVE GROUND", "0.00 m", 602);
-
-        var setup = new Button
-        {
-            Text = "A", TooltipText = "Delivery settings", FocusMode = FocusModeEnum.None,
-            CustomMinimumSize = new Vector2(42, 42)
-        };
-        setup.Pressed += () => SetupRequested?.Invoke();
-        AddChild(setup);
-        setup.Position = new(1358, 24);
 
         DeliveryPanel = new DeliveryPanel();
         AddChild(DeliveryPanel);
@@ -49,7 +39,7 @@ public partial class GameHud : Control
     private Label Stat(string caption, string value, float x)
     {
         var card = new PanelContainer { MouseFilter = MouseFilterEnum.Ignore };
-        card.AddThemeStyleboxOverride("panel", VisualTheme.Box(new("172c32"), VisualTheme.Border, 7, 10));
+        card.AddThemeStyleboxOverride("panel", VisualTheme.Box(VisualTheme.Panel, VisualTheme.Border, 7, 10));
         AddChild(card);
         card.Position = new(x, 22);
         card.Size = new(176, 58);

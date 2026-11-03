@@ -39,8 +39,9 @@ References: [MCC pitch](https://www.lords.org/mcc/the-laws/the-pitch), [MCC crea
 | `GroundRestitution` | 0.58 | dimensionless |
 | `GroundFriction` | 0.22 | dimensionless Coulomb coefficient |
 | `RollingResistance` | 0.025 | dimensionless deceleration coefficient |
-| `BatMass` | 1.15 | kg |
-| `BatInertiaAboutGrip` | 0.26 | kg·m²; effective driven-bat approximation |
+| `BatMass` | 1.17 | kg; published sample mean |
+| `BatCentreOfMassFromGrip` | 0.40 | m along the bat from the grip |
+| `BatInertiaAboutGrip` | 0.2459 | kg·m²; converted to the assumed grip axis |
 | `BatRestitution` | 0.50 | dimensionless |
 | `BatFriction` | 0.28 | dimensionless |
 | `BatHalfThickness` | 0.032 | m |
@@ -48,7 +49,7 @@ References: [MCC pitch](https://www.lords.org/mcc/the-laws/the-pitch), [MCC crea
 | `HandleLength` | 0.28 | m |
 | `Substeps` | 8 | subdivisions of the fixed 1/120 s tick |
 
-The aerodynamic and contact coefficients are starting assumptions, not measurements of a particular ball, bat or ground. Configuration is loaded and validated at launch. Changing it requires restarting the scene.
+Bat mass and inertia use published measurements with an explicit grip-axis conversion; see [CRICKET_REFERENCES.md](CRICKET_REFERENCES.md) for online sources, calculations and reference checks. The aerodynamic coefficients, pitch response, friction and effective bat restitution remain tuning assumptions. In particular, a hard-plate ball bounce measurement does not calibrate a soil pitch. Configuration is validated at launch; changing it requires restarting the scene. Validation rejects centre-of-mass locations outside the bat and grip inertias that would imply nonpositive centre-of-mass inertia.
 
 ## Flight
 
@@ -58,7 +59,7 @@ Gravity is constant. Drag is `-0.5 ρ Cd A |v| v`, divided by mass for accelerat
 
 Ground normal impulse uses restitution. Tangential impulse removes contact slip `vx + ωr` subject to the Coulomb limit. The ball uses solid-sphere inertia `0.4mr²`. Below the small vertical settling threshold, the supported-contact model continues to remove slip through friction before enforcing pure rolling. Rolling resistance slows a rolling ball to rest without changing its direction or introducing energy.
 
-Bat contact uses `v_contact = v_grip + ω_bat × r`. The impulse denominator includes inverse ball mass, inverse bat mass, and the squared normal lever divided by bat inertia. Tangential impulse is limited by bat friction and changes ball spin. The bat remains animation-driven; there is no fully coupled bat-human recoil system. Wicket restitution is a simplified passive response in `Simulation`. The visible batter is permanently invulnerable, so body, pad and helmet overlap does not affect the ball's position, velocity or spin.
+Bat contact velocity uses `v_contact = v_grip + ω_bat × r_from_grip`. The impulse uses the **centre-of-mass** lever and inertia: `I_com = I_grip - M d²`, which is 0.0587 kg·m² for the defaults. Its denominator includes inverse ball mass, inverse bat mass, and the squared normal COM lever divided by COM inertia. Tangential slip includes the rotation caused by the normal impulse before applying friction; the tangential impulse also changes ball spin. The bat remains animation-driven, so its recoil is not fed back into the arms. Wicket restitution is a simplified passive response in `Simulation`. The visible batter is permanently invulnerable, so body, pad and helmet overlap does not affect the ball's position, velocity or spin.
 
 ## Numerical validation
 
