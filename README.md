@@ -1,1 +1,126 @@
-# cricket2d-simulator
+# Cricket 2D — The Practice Ground
+
+A native Godot 4.7.2 .NET / C# cricket practice game. Configure a delivery, control an articulated batter with two sticks, and repeat. This first playable version implements the supplied blueprint's physics-first architecture.
+
+## Play on this PC
+
+Double-click **`Play.cmd`**. It finds Godot .NET in your Downloads folder, builds the C# projects using the packages bundled with Godot, and launches the game. Godot 4.7.2 .NET and .NET SDK 10 are already installed; **no additional application is needed**.
+
+Alternatively, open `project.godot` in the Godot **.NET** editor, build, and press **F6/F5**. Run `Play.cmd` once before the first editor build to copy Godot's local dependency packages.
+
+If Godot has moved:
+
+```powershell
+.\tools\Run.ps1 -GodotPath 'C:\Tools\Godot\Godot_v4.7.2-stable_mono_win64_console.exe'
+```
+
+You can also set `GODOT4` to the Godot executable. `Play.cmd` uses a process-local PowerShell execution-policy override; it does not change the machine's execution policy. The launcher does not install applications or require administrator access. The initial build needs a .NET 10 SDK, selected by `global.json`. Dependency packages and build outputs stay in this repository's ignored directories. Godot uses its ordinary Windows user-profile cache directories.
+
+## Delivery setup
+
+The game opens on the idle field. Press the controller's **A / south face button**, or click the small **A** button on screen, to open the setup panel:
+
+| Setting | Meaning | Supported range |
+| --- | --- | --- |
+| Release speed | Magnitude of velocity when the ball leaves the hand | 18–180 km/h |
+| Pitching length | First ground contact, measured **from the bowler-end wicket** toward the striker | 8–25 m |
+| Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.16 m (153–216 cm) |
+
+With the panel open, press **Begin delivery**, **Enter**, or the controller's **A / south face button**. The automated bowler winds up for 1.25 s, then releases the ball. You can move the bat during the windup. There is **no timed reset**: the ball continues naturally and the panel stays closed until you press controller A or click the on-screen A button. One A press opens the panel; a separate press begins the next delivery. Opening setup retains the previous delivery's maxima. Beginning a new delivery clears them. Leaving the window pauses the simulation.
+
+The bowler calculates a launch angle using the same aerodynamic integrator as the live ball. It selects the lower reachable trajectory and rejects impossible combinations. Length describes the unimpeded first pitch and can extend beyond the striker's wicket: a bat or wicket interception can prevent the ball reaching that point. Release height can be adjusted in 0.01 m increments, including both endpoints.
+
+The release is at x = 1.2192 m, on the bowler's popping crease. The length setting still uses x = 0 at the wicket, so a length of 16 m means 14.7808 m horizontally from release. Both wickets remain visible, **exactly 20.12 m apart**. The **batter is on the left** and the **bowler is on the right** in the initial view.
+
+The batter is always visible and permanently invulnerable to the ball. The ball passes through his body, pads and helmet without a collision response. **The bat and wickets remain collidable.**
+
+## Stats, camera and boundaries
+
+The camera automatically zooms out to keep the ball and both wickets visible. When the ball moves beyond the left side, the wickets remain toward the right edge; when it moves beyond the right side, they remain toward the left edge. High shots also expand the view vertically. The camera keeps the widest zoom for the rest of that delivery and returns to the initial view when settings reopen.
+
+The screen displays only four compact stats: **live ball speed**, **maximum ball speed**, **maximum length from the batter**, and **maximum height above ground**. Both speeds use **km/h**; distances use **metres**. Maxima are tracked from release through the entire delivery, including incoming flight, bat contact, bounce and rolling. Length is the greatest absolute horizontal distance from the batter's fixed normal stance, on either side; height uses the ball centre above ground. The maxima do not decrease when the ball slows, comes closer or falls. The bottom instructions, countdown, extra telemetry, ruler and live-height guide have been removed.
+
+The boundary signs mark **37 m to the left** and **75 m to the right** of the batter's normal stance. Both are fixed field markers: their posts and signs stay at their world positions and appear only when the camera includes them. There are no bottom striker/bowler labels or off-screen boundary labels. Delivery pitching length continues to be measured from the bowler-end wicket. Boundary signs do not add scoring or stop the ball.
+
+## Controls
+
+| Action | Controller | Keyboard |
+| --- | --- | --- |
+| Backlift / forward swing | Left stick left / right | A / D |
+| Lower stance | Left stick down | S |
+| Extend / flex elbow | Right stick right / left | Left / right arrows |
+| Adjust wrist and bat angle | Right stick up / down | Up / down arrows |
+| Select setup field | D-pad up / down | Tab / Shift+Tab or click |
+| Change setup value | D-pad left / right | Type a number or use the spinner |
+| Begin | A / south button or Start | Enter or click Begin |
+| Open / return to settings | A / south button | Click the on-screen A button |
+| Toggle trajectory | — | T |
+| Full screen | — | F11 |
+
+Start at the default **115.2 km/h, 16 m, 2.15 m**. Hold the left stick partly left for a backlift, then move it right shortly before the ball reaches the batter. A gentle stick movement produces a slower swing. The stick sets a joint target, and speed/acceleration limits determine how the arm reaches it. Returning the sticks to centre restores the guard position. The right stick changes the elbow and wrist, so it affects both reach and bat orientation.
+
+Controller bindings use Godot's standard gamepad mappings with a radial 0.18 dead zone and support connection during play. No physical controller was attached during development verification; test your controller's stick directions and feel on this PC. Keyboard and synthetic controller menu events are covered by the runtime checks.
+
+## Implemented physics and animation
+
+- SI-only simulation: metres, seconds, kilograms and radians. Speed entry and display convert between km/h and the core's m/s; pixel conversion exists only in the drawing layer.
+- A 0.156 kg, 0.072 m diameter ball with gravity, quadratic air drag, a bounded 2D Magnus approximation and spin decay. Deliveries start without spin; impacts create spin.
+- RK4 flight integration at a fixed 120 Hz with eight substeps per tick. Ground contact time is solved within the substep.
+- Pitch restitution, Coulomb friction, ball angular inertia, slipping-to-rolling transition and rolling resistance. Passive ground contact dissipates energy.
+- Swept ball-versus-moving-capsule contact detection for the bat. Impulses depend on the bat contact-point velocity, finite effective mass, rotational lever arm and friction.
+- Bat and wicket contacts; an always-visible, invulnerable batter; a trajectory trail and persistent per-delivery speed, distance and height maxima.
+- Fixed-length upper arms, forearms, thighs and shins; an elbow hinge constrained to 20–135 degrees; acceleration-limited shoulder motion; two-link IK for the second arm and legs; planted feet and coordinated weight transfer.
+- Procedural vector presentation with automatic camera framing, boundary signs and four compact stats. Pitch, characters and wickets share the same changing scale. A minimum drawn ball radius and subtle halo keep distant balls visible without changing collision size.
+
+The tunable baseline coefficients are in [`Config/physics.json`](Config/physics.json). Their units and defaults are documented in [`docs/PHYSICS.md`](docs/PHYSICS.md).
+
+## Code layout
+
+```text
+Core/                    Engine-independent .NET physics library
+  Physics/               Flight, delivery solver, collision and contact laws
+  Animation/             Batting joints, human pose and IK
+  Statistics/            Per-delivery maxima sampled during physics updates
+  Simulation.cs          Fixed timestep and delivery state machine
+Presentation/            Engine-independent camera framing and field references
+Scripts/
+  GameController.cs      Connects simulation, input and presentation
+  Input/                 Named keyboard/gamepad actions
+  Presentation/          Ground, characters, HUD and setup panel
+Config/physics.json      Physical coefficients in SI units
+Scenes/Main.tscn         Godot entry point
+Tests/                   Offline executable physics validation
+tools/Run.ps1            Build, test and launch
+```
+
+The core has no dependency on Godot. Rendering cannot modify the ball, and the UI passes only validated delivery settings. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for extension points and deliberate approximations.
+
+## Validation
+
+Build and run the automated checks:
+
+```powershell
+.\tools\Run.ps1 -BuildOnly -Test
+```
+
+Run the core checks independently of Godot:
+
+```powershell
+dotnet run --project Tests/Cricket.Physics.Tests.csproj
+```
+
+Run the actual Godot scene through A-button setup, bowling, bounce, continued play beyond five seconds, manual return to setup and a second delivery:
+
+```powershell
+.\tools\Run.ps1 -Headless -SmokeTest
+```
+
+Tests return a nonzero exit code on failure. They cover analytic vacuum flight, drag, 1,000 random bounce-energy checks, rolling friction, bat impulses, fast swept contacts, 48 launch combinations, invalid/unreachable deliveries, landing accuracy, continued play without a timed reset, retained/reset maxima, km/h conversion, playable swing sequences, bone lengths and determinism at different render rates. Camera checks cover both travel directions, direction changes, high shots, reset, and fixed boundary/height measurements. The Godot smoke test verifies A-only setup, separate opening/beginning presses, speed entry in km/h, and controller elbow inversion with preserved swing/wrist directions.
+
+## Current scope
+
+This is a physically grounded **2D prototype**, with coefficients that still need calibration against measured cricket footage. It does not simulate lateral seam/swing, off-side/leg-side shot placement, muscle dynamics, full body-bat recoil, deformable pitch/ball/bat materials, fielding, scoring, audio or match rules. Wicket movement is a visual hit response. The bowler is an automated target solver with a procedural delivery animation, without tactical decision making. Art is deliberately simple while motion and contact are developed.
+
+The game runs through the installed Godot runtime. A standalone distributable `.exe` has not been exported; that later step needs the matching Godot .NET export templates.
+
+Pitch/equipment references: [MCC pitch dimensions](https://www.lords.org/mcc/the-laws/the-pitch), [MCC wickets](https://www.lords.org/mcc/the-laws/the-wickets), [MCC ball](https://www.lords.org/mcc/the-laws/the-ball). Engine references: [Godot C#](https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html), [Godot controllers](https://docs.godotengine.org/en/stable/tutorials/inputs/controllers_gamepads_joysticks.html).

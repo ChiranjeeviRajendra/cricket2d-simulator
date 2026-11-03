@@ -1,0 +1,20 @@
+{
+  "BallMass": 0.156,
+  "BallRadius": 0.036,
+  "Gravity": 9.80665,
+  "AirDensity": 1.225,
+  "DragCoefficient": 0.47,
+  "MagnusCoefficient": 0.12,
+  "SpinDecay": 0.025,
+  "GroundRestitution": 0.58,
+  "GroundFriction": 0.22,
+  "RollingResistance": 0.025,
+  "BatMass": 1.15,
+  "BatInertiaAboutGrip": 0.26,
+  "BatRestitution": 0.5,
+  "BatFriction": 0.28,
+  "BatHalfThickness": 0.032,
+  "BatLength": 0.85,
+  "HandleLength": 0.28,
+  "Substeps": 8
+}

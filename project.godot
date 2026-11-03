@@ -1,0 +1,31 @@
+; Native Godot presentation; the simulation owns all physical quantities in SI.
+config_version=5
+
+[application]
+config/name="Cricket 2D | The Practice Ground"
+run/main_scene="res://Scenes/Main.tscn"
+config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
+config/icon="res://Assets/icon.svg"
+
+[display]
+window/size/viewport_width=1440
+window/size/viewport_height=900
+window/size/window_width_override=1440
+window/size/window_height_override=900
+window/stretch/mode="canvas_items"
+
+[dotnet]
+project/assembly_name="Cricket2D"
+
+[physics]
+common/physics_ticks_per_second=120
+common/max_physics_steps_per_frame=16
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/default_filters/use_nearest_mipmap_filter=false
+environment/defaults/default_clear_color=Color(0.055, 0.09, 0.1, 1)
+
+[input_devices]
+joypads/ignore_joypad_on_unfocused_application=true

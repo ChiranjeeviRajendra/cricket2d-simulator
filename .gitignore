@@ -1,0 +1,10 @@
+.godot/
+.nuget/
+.dotnet-home/
+**/bin/
+**/obj/
+.local/
+artifacts/
+*.user
+*.tmp
+
