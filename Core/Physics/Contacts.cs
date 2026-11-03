@@ -73,21 +73,23 @@ public static class Contacts
     }
 
     public static BallState BatImpulse(BallState ball, Vec2 normal, Vec2 contactVelocity,
-        Vec2 leverFromGrip, SimulationSettings s, out double normalImpulse)
+        Vec2 leverFromCentreOfMass, SimulationSettings s, out double normalImpulse)
     {
         Vec2 relative = ball.Velocity - contactVelocity;
         double closing = Vec2.Dot(relative, normal);
         normalImpulse = 0;
         if (closing >= 0) return ball;
-        double lever = Vec2.Cross(leverFromGrip, normal);
-        double inverseMass = 1 / s.BallMass + 1 / s.BatMass + lever * lever / s.BatInertiaAboutGrip;
+        // Translational inverse mass and rotational inertia must use the same (COM) frame.
+        double lever = Vec2.Cross(leverFromCentreOfMass, normal);
+        double inverseMass = 1 / s.BallMass + 1 / s.BatMass + lever * lever / s.BatInertiaAboutCentreOfMass;
         normalImpulse = -(1 + s.BatRestitution) * closing / inverseMass;
         Vec2 tangent = normal.Perpendicular;
         double inertia = 0.4 * s.BallMass * s.BallRadius * s.BallRadius;
-        double tangentLever = Vec2.Cross(leverFromGrip, tangent);
-        double slip = Vec2.Dot(relative, tangent) - ball.Spin * s.BallRadius;
+        double tangentLever = Vec2.Cross(leverFromCentreOfMass, tangent);
+        double slip = Vec2.Dot(relative, tangent) - ball.Spin * s.BallRadius +
+            normalImpulse * lever * tangentLever / s.BatInertiaAboutCentreOfMass;
         double tangentInverseMass = 1 / s.BallMass + 1 / s.BatMass +
-            s.BallRadius * s.BallRadius / inertia + tangentLever * tangentLever / s.BatInertiaAboutGrip;
+            s.BallRadius * s.BallRadius / inertia + tangentLever * tangentLever / s.BatInertiaAboutCentreOfMass;
         double jt = Math.Clamp(-slip / tangentInverseMass, -s.BatFriction * normalImpulse, s.BatFriction * normalImpulse);
         return ball with
         {

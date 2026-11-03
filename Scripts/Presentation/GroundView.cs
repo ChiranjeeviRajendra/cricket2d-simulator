@@ -10,6 +10,21 @@ public partial class GroundView : Node2D
     public Simulation Simulation { get; set; } = null!;
     public bool ShowTrajectory { get; set; } = true;
     public bool Diagnostics { get; set; }
+    private double _pausedFraction;
+    private long _resumeTick = -1;
+    private bool _interpolationPaused;
+    public bool InterpolationPaused
+    {
+        get => _interpolationPaused;
+        set
+        {
+            if (value && !_interpolationPaused) _pausedFraction = RenderFraction;
+            if (!value && _interpolationPaused) _resumeTick = Simulation.TickCount;
+            _interpolationPaused = value;
+        }
+    }
+    private double RenderFraction => Simulation.Phase == DeliveryPhase.Setup ? 1 :
+        _interpolationPaused || _resumeTick == Simulation.TickCount ? _pausedFraction : Engine.GetPhysicsInterpolationFraction();
     public DeliveryPlan? Preview { get; set; }
     private const float Left = (float)FieldCamera.Left;
     private const float GroundY = (float)FieldCamera.GroundY;
@@ -18,14 +33,18 @@ public partial class GroundView : Node2D
     private float Zoom => (float)_camera.Zoom;
     private Vec2? _captureBall;
     public Vec2? TrackedBallPosition => _captureBall ?? (Simulation.BallVisible ?
-        Vec2.Lerp(Simulation.PreviousBall.Position, Simulation.Ball.Position, Engine.GetPhysicsInterpolationFraction()) : null);
+        Vec2.Lerp(Simulation.PreviousBall.Position, Simulation.Ball.Position, RenderFraction) : null);
     private static readonly Color Skin = new("bc8a68");
     private static readonly Color White = new("e2e9d9");
     private static readonly Color ShadowWhite = new("9caeaa");
     private static readonly Color BatWood = new("d4b781");
     private Font _font = null!;
 
-    public override void _Ready() => _font = new SystemFont { FontNames = ["Bahnschrift", "Segoe UI"] };
+    public override void _Ready()
+    {
+        PhysicsInterpolationMode = PhysicsInterpolationModeEnum.Off;
+        _font = new SystemFont { FontNames = ["Bahnschrift", "Segoe UI"] };
+    }
 
     public override void _Process(double delta)
     {
@@ -137,8 +156,8 @@ public partial class GroundView : Node2D
         var plan = Simulation.Phase == DeliveryPhase.Setup ? Preview : Simulation.Plan;
         if (plan == null) return;
         Vector2 target = W(new(plan.Settings.PitchingLength, 0));
-        DrawLine(target + new Vector2(-8, 0), target + new Vector2(8, 0), VisualTheme.Accent, 3, true);
-        DrawLine(target + new Vector2(0, 4), target + new Vector2(0, 22), VisualTheme.Accent, 1, true);
+        DrawLine(target + new Vector2(-8, 0), target + new Vector2(8, 0), VisualTheme.OnDark, 3, true);
+        DrawLine(target + new Vector2(0, 4), target + new Vector2(0, 22), VisualTheme.OnDark, 1, true);
         if (Simulation.Phase != DeliveryPhase.Live && ShowTrajectory)
         {
             for (int i = 1; i < plan.Preview.Count; i += 2)
@@ -148,56 +167,9 @@ public partial class GroundView : Node2D
 
     private void Batter()
     {
-        HumanPose p = Simulation.Batter.Pose;
-        // Render the same bones that position the physical bat, without stretching either arm.
-        DrawEllipse(W(new(FieldLayout.BatterReferenceX, 0.015)), new Vector2(29, 4) * Zoom, new Color(0, 0, 0, 0.20f));
-        Limb(p.Hip, p.BackKnee, ShadowWhite, 0.135);
-        Limb(p.BackKnee, p.BackAnkle, ShadowWhite, 0.105);
-        Shoe(p.BackAnkle, new("aebeb5"));
-        Limb(p.RearShoulder, p.RearElbow, ShadowWhite, 0.095);
-        Limb(p.RearElbow, p.Hands, Skin.Darkened(0.15f), 0.065);
-        Limb(p.Hip, p.FrontKnee, White, 0.145);
-        Limb(p.FrontKnee, p.FrontAnkle, White, 0.105);
-        // Pads follow the shin and preserve a recognizable cricketer silhouette.
-        Vec2 padTop = Vec2.Lerp(p.FrontKnee, p.FrontAnkle, 0.08) + new Vec2(-0.035, 0);
-        Vec2 padBottom = Vec2.Lerp(p.FrontKnee, p.FrontAnkle, 0.86) + new Vec2(-0.035, 0);
-        Limb(padTop, padBottom, new("f0efdc"), 0.15);
-        for (int i = 1; i < 5; i++)
-        {
-            Vector2 mark = W(Vec2.Lerp(padTop, padBottom, i / 5.0));
-            DrawLine(mark + new Vector2(-4, 0) * Zoom, mark + new Vector2(4, 0) * Zoom, new("c1c9b5"), Math.Max(.5f, Zoom), true);
-        }
-        Shoe(p.FrontAnkle, White);
-        Limb(p.Hip + new Vec2(0, 0.03), p.Shoulder - new Vec2(0, 0.02), White, 0.24);
-        Limb(p.Hip + new Vec2(0.055, 0.05), p.Shoulder + new Vec2(0.055, -0.05), ShadowWhite, 0.045);
-        DrawLine(W(p.Hip + new Vec2(-0.11, 0.03)), W(p.Hip + new Vec2(0.08, 0.03)), new("37545a"), 2);
-        Limb(p.Shoulder, p.Head - new Vec2(0, 0.07), Skin, 0.08);
-        DrawCircle(W(p.Head), 0.112f * PixelsPerMetre, Skin);
-        DrawCircle(W(p.Head + new Vec2(0.015, 0.033)), 0.125f * PixelsPerMetre, new("274752"));
-        DrawLine(W(p.Head + new Vec2(-0.15, 0.02)), W(p.Head + new Vec2(0.05, 0.02)), new("7b9999"), 2, true);
-        DrawLine(W(p.Head + new Vec2(-0.13, 0)), W(p.Head + new Vec2(-0.10, -0.12)), new("a1b9b3"), 1, true);
-        DrawLine(W(p.Head + new Vec2(-0.13, -0.08)), W(p.Head + new Vec2(0.03, -0.10)), new("a1b9b3"), 1, true);
-        Limb(p.Shoulder, p.LeadElbow, White, 0.105);
-        Limb(Vec2.Lerp(p.Shoulder, p.LeadElbow, 0.7), p.LeadElbow, Skin, 0.075);
-        Limb(p.LeadElbow, p.Hands, Skin, 0.065);
-        Bat(p.Bat);
-        Limb(p.Hands - p.Bat.Direction * 0.035, p.Hands + p.Bat.Direction * 0.075, White, 0.085);
-        if (Diagnostics)
-        {
-            foreach (Vec2 joint in new[] { p.Hip, p.Shoulder, p.LeadElbow, p.RearElbow, p.Hands, p.FrontKnee, p.BackKnee })
-                DrawCircle(W(joint), 2, VisualTheme.Coral);
-        }
+        BattingFrame frame = BattingFrame.Interpolate(Simulation.PreviousFrame, Simulation.Batter.Frame, RenderFraction);
+        BatterDrawing.Draw(this, BattingRig.BuildPose(frame, Simulation.Batting), Simulation.Settings, W, PixelsPerMetre, Diagnostics);
     }
-
-    private void Bat(BatPose bat)
-    {
-        Capsule blade = bat.Blade(Simulation.Settings);
-        Limb(bat.Grip - bat.Direction * 0.04, blade.A, new("3b5554"), 0.032);
-        Limb(blade.A, blade.B, BatWood, Simulation.Settings.BatHalfThickness * 2);
-        DrawLine(W(blade.A), W(blade.B), new("ecdbb3"), 1, true);
-        Limb(Vec2.Lerp(blade.A, blade.B, 0.12), Vec2.Lerp(blade.A, blade.B, 0.34), new("557c70"), 0.052);
-    }
-
     private void Bowler()
     {
         double height = (Simulation.Phase == DeliveryPhase.Setup ? Preview : Simulation.Plan)?.Settings.ReleaseHeight ?? 2.15;

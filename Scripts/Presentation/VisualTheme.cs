@@ -4,32 +4,72 @@ namespace Cricket2D;
 
 public static class VisualTheme
 {
-    public static readonly Color Background = new("101f26");
-    public static readonly Color Panel = new("192e35");
-    public static readonly Color Border = new("355057");
-    public static readonly Color Ink = new("ecf1df");
-    public static readonly Color Muted = new("99b6b4");
-    public static readonly Color Accent = new("c9ec94");
-    public static readonly Color Coral = new("f18d75");
+    public static readonly Color Background = new("171716");
+    public static readonly Color Panel = new("e6ddce");
+    public static readonly Color Border = new("bcb5a9");
+    public static readonly Color Ink = new("454440");
+    public static readonly Color Muted = new("65625c");
+    public static readonly Color Accent = new("454440");
+    public static readonly Color OnDark = new("e6ddce");
+    public static readonly Color MutedOnDark = new("b6b0a5");
+    public static readonly Color Coral = new("a03729");
 
     public static Theme Create()
     {
         var theme = new Theme { DefaultFontSize = 17 };
         theme.DefaultFont = new SystemFont { FontNames = ["Bahnschrift", "Segoe UI", "Arial"] };
         theme.SetColor("font_color", "Label", Ink);
-        theme.SetColor("font_color", "Button", Background);
-        theme.SetColor("font_hover_color", "Button", Background);
-        theme.SetColor("font_pressed_color", "Button", Background);
-        theme.SetStylebox("normal", "Button", Box(Accent, Accent, 8, 14));
-        theme.SetStylebox("hover", "Button", Box(new("def5bb"), Accent, 8, 14));
-        theme.SetStylebox("pressed", "Button", Box(new("accc7e"), Accent, 8, 14));
-        theme.SetStylebox("focus", "Button", Box(Colors.Transparent, Ink, 8, 2));
-        theme.SetStylebox("normal", "LineEdit", Box(new("0f2229"), Border, 6, 8));
-        theme.SetStylebox("focus", "LineEdit", Box(new("0f2229"), Accent, 6, 8));
+        theme.SetColor("font_color", "Button", Ink);
+        theme.SetColor("font_hover_color", "Button", Ink);
+        theme.SetColor("font_pressed_color", "Button", OnDark);
+        theme.SetColor("font_focus_color", "Button", OnDark);
+        theme.SetColor("font_disabled_color", "Button", new("999187"));
+        theme.SetStylebox("normal", "Button", Box(Panel, Border, 8, 14));
+        theme.SetStylebox("hover", "Button", Box(new("dcd4c6"), Ink, 8, 14));
+        theme.SetStylebox("pressed", "Button", Box(Ink, Ink, 8, 14));
+        theme.SetStylebox("focus", "Button", Box(Ink, Ink, 8, 14));
+        theme.SetStylebox("disabled", "Button", Box(new("dcd5c9"), new("cbc3b6"), 8, 14));
+        theme.SetStylebox("normal", "LineEdit", Box(Panel, Border, 6, 8));
+        var inputFocus = Box(Colors.Transparent, Ink, 6, 8);
+        inputFocus.BorderWidthLeft = inputFocus.BorderWidthRight = inputFocus.BorderWidthTop = inputFocus.BorderWidthBottom = 2;
+        theme.SetStylebox("focus", "LineEdit", inputFocus);
         theme.SetColor("font_color", "LineEdit", Ink);
-        theme.SetColor("caret_color", "LineEdit", Accent);
-        theme.SetColor("selection_color", "LineEdit", new("466653"));
+        theme.SetColor("caret_color", "LineEdit", Ink);
+        theme.SetColor("selection_color", "LineEdit", Ink);
+        theme.SetColor("font_selected_color", "LineEdit", OnDark);
+        foreach (string direction in new[] { "up", "down" })
+        {
+            theme.SetColor(direction + "_icon_modulate", "SpinBox", Ink);
+            theme.SetColor(direction + "_hover_icon_modulate", "SpinBox", OnDark);
+            theme.SetColor(direction + "_pressed_icon_modulate", "SpinBox", OnDark);
+            theme.SetColor(direction + "_disabled_icon_modulate", "SpinBox", Muted);
+            theme.SetStylebox(direction + "_background", "SpinBox", Box(Panel, Border, 3, 0));
+            theme.SetStylebox(direction + "_background_hovered", "SpinBox", Box(Ink, Ink, 3, 0));
+            theme.SetStylebox(direction + "_background_pressed", "SpinBox", Box(Ink, Ink, 3, 0));
+        }
+        theme.SetConstant("buttons_width", "SpinBox", 22);
+        theme.SetStylebox("panel", "PopupMenu", Box(Panel, Border));
+        theme.SetStylebox("hover", "PopupMenu", Box(Ink, Ink, 4, 8));
+        theme.SetColor("font_color", "PopupMenu", Ink);
+        theme.SetColor("font_hover_color", "PopupMenu", OnDark);
         return theme;
+    }
+
+    public static void NavigationButton(Button button)
+    {
+        void Refresh()
+        {
+            bool selected = button.HasFocus();
+            Color ink = selected ? OnDark : Ink, fill = selected ? Ink : Panel;
+            foreach (string state in new[] { "normal", "hover", "pressed" })
+                button.AddThemeStyleboxOverride(state, Box(fill, selected ? Ink : Border, 8, 14));
+            foreach (string state in new[] { "font_color", "font_hover_color", "font_pressed_color" })
+                button.AddThemeColorOverride(state, ink);
+        }
+        button.FocusEntered += Refresh;
+        button.FocusExited += Refresh;
+        button.MouseEntered += () => { if (!button.Disabled) button.GrabFocus(); };
+        Refresh();
     }
 
     public static StyleBoxFlat Box(Color fill, Color border, int radius = 12, int padding = 16) => new()

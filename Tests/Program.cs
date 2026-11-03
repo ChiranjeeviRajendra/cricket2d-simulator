@@ -20,7 +20,26 @@ var tests = new (string Name, Action Run)[]
     ("Playable swing sequences produce bat contact", PlayableSwing),
     ("Ball passes through the visible batter; wicket stays collidable", InvulnerableBatter),
     ("Anatomical bone lengths and joint limits stay bounded", Anatomy),
+    ("Left stick follows the screen clock with straight arms and bat from 8 to 1", BattingChecks.StraightSwing),
+    ("Right stick pivots the bat at the fist without moving the shoulder or hands", BattingChecks.IndependentWrist),
+    ("Wrist limits follow the actual swing angle and interpolate across 12", BattingChecks.WristLimits),
+    ("Swing accelerates, reaches its plateau and slows through follow-through", BattingChecks.SwingSpeeds),
+    ("Committed snap resists reversal, keeps wrist control and rearms without looping", BattingChecks.Snap),
+    ("Repeated full circles preserve continuous collision angles", BattingChecks.FullCircles),
+    ("Both sticks respect configurable dead zones and release behavior", BattingChecks.DeadZones),
+    ("Reverse swing stops at 8 and is slower than the forward stroke", BattingChecks.ReverseLimits),
+    ("Cricket bat inertial properties and impact momentum match reference checks", BattingChecks.CricketPhysics),
+    ("Batsman JSON changes runtime behavior and persists across deliveries", BattingChecks.Configuration),
+    ("Invalid batsman settings fail with actionable errors", BattingChecks.InvalidConfiguration),
     ("Repeated inputs reproduce the same state", Determinism),
+    ("Body phases coordinate a planted step, rear-toe pivot and recovery", AnimationChecks.Footwork),
+    ("Interrupted and consecutive swings keep footwork continuous", AnimationChecks.Interruptions),
+    ("Wrist input cannot affect body, head, shoulder or footwork", AnimationChecks.Independence),
+    ("Weight transfer contributes to physical bat velocity while the head counters torso lean", AnimationChecks.WeightAndHead),
+    ("Interpolated poses retain bone lengths, pivots and clearance through snaps and resets", AnimationChecks.Interpolation),
+    ("Preview playback agrees at 30/60/144 FPS, pauses, steps, loops and recovers", AnimationChecks.Playback),
+    ("Preview reload is atomic and validates the combined movement envelope", AnimationChecks.Reload),
+    ("Pitch slider preserves stump spacing and the 25 m extension", PitchLengthScaling),
     ("Render rates of 30, 60 and 144 Hz yield identical simulation", RenderRates),
     ("Camera fits the ball and both wickets in either direction", CameraFraming),
     ("Camera retains zoom during flight and resets for the next ball", CameraReset),
@@ -39,6 +58,23 @@ return failures == 0 ? 0 : 1;
 static void Check(bool condition, string message)
 {
     if (!condition) throw new InvalidOperationException(message);
+}
+
+static void PitchLengthScaling()
+{
+    Near(1, PitchLengthScale.FractionForMetres(0), 1e-12, "Bowler at right edge");
+    Near(0, PitchLengthScale.FractionForMetres(25), 1e-12, "25 m at left edge");
+    Near(.1952, PitchLengthScale.FractionForMetres(PitchDimensions.WicketSeparation), 1e-12, "4.88 m extension beyond batter");
+    foreach (double width in new[] { 320.0, 740, 1440 })
+    {
+        double bowler = width * PitchLengthScale.FractionForMetres(0);
+        double batter = width * PitchLengthScale.FractionForMetres(PitchDimensions.WicketSeparation);
+        Near(20.12, (bowler - batter) / (width / 25), 1e-12, "Stump separation at resized widths");
+    }
+    foreach (double metres in new[] { 8.0, 8.01, 16, 20.12, 24.99, 25 })
+        Near(metres, PitchLengthScale.SelectMetres(PitchLengthScale.FractionForMetres(metres)), 1e-12, "Numeric/slider round trip");
+    Near(8, PitchLengthScale.SelectMetres(1.2), 1e-12, "Minimum selection clamp");
+    Near(25, PitchLengthScale.SelectMetres(-.2), 1e-12, "Maximum selection clamp");
 }
 static void Near(double expected, double actual, double tolerance, string description)
 {
@@ -102,12 +138,12 @@ static void BatImpulse()
 {
     var s = new SimulationSettings();
     BallState b = new(new(0, 1), new(35, 4));
-    BallState stationary = Contacts.BatImpulse(b, new(-1, 0), Vec2.Zero, new(0, -0.55), s, out double j);
+    BallState stationary = Contacts.BatImpulse(b, new(-1, 0), Vec2.Zero, new(0, -0.15), s, out double j);
     Check(j > 0 && stationary.Velocity.X < 0, "Stationary bat should deflect the ball back.");
     Check(stationary.KineticEnergy(s) < b.KineticEnergy(s), "Passive bat added energy.");
-    BallState moving = Contacts.BatImpulse(b, new(-1, 0), new(-18, 0), new(0, -0.55), s, out _);
+    BallState moving = Contacts.BatImpulse(b, new(-1, 0), new(-18, 0), new(0, -0.15), s, out _);
     Check(moving.Velocity.X < stationary.Velocity.X, "Contact point velocity must influence the shot.");
-    Contacts.BatImpulse(b, new(-1, 0), Vec2.Zero, new(0, -0.8), s, out double toeImpulse);
+    Contacts.BatImpulse(b, new(-1, 0), Vec2.Zero, new(0, -0.4), s, out double toeImpulse);
     Check(toeImpulse < j, "A larger rotational lever should reduce effective mass.");
 }
 static void SweptContact()
@@ -274,8 +310,8 @@ static void PlayableSwing()
         sim.Begin(new(32, 16, 2.15), out _);
         for (int i = 0; i < 500; i++)
         {
-            double swing = i < timing ? -.65 : .75;
-            sim.Tick(new(swing, 0, 0, 0));
+            double clock = 240 - Math.Clamp((i - timing) * 8.0, 0, 270);
+            sim.Tick(BattingChecks.AtClock(clock));
         }
         if (sim.BatHit) hits++;
         highestExitSpeed = Math.Max(highestExitSpeed, sim.HitExitSpeed ?? 0);
@@ -295,7 +331,7 @@ static void InvulnerableBatter()
         for (int i = 0; i < 300; i++)
         {
             BallState before = sim.Ball;
-            sim.Tick(new(-1, 0, 0, 0)); // Hold the bat away from the incoming delivery.
+            sim.Tick(BattingChecks.AtClock(30)); // Hold the bat high, away from the incoming delivery.
             if (sim.Phase != DeliveryPhase.Live) continue;
             wicketHit |= sim.WicketHit;
             if (sim.Ball.Position.X < 18 || sim.Ball.Position.X > 19.5) continue;
@@ -322,22 +358,23 @@ static void Anatomy()
     var rng = new Random(93);
     for (int n = 0; n < 100; n++)
     {
-        var input = new BattingInput(rng.NextDouble() * 2 - 1, rng.NextDouble(), rng.NextDouble() * 2 - 1, rng.NextDouble() * 2 - 1);
+        var input = new BattingInput(rng.NextDouble() * 2 - 1, rng.NextDouble() * 2 - 1, rng.NextDouble() * 2 - 1, rng.NextDouble() * 2 - 1);
         for (int i = 0; i < 240; i++)
         {
             rig.Step(input, 1.0 / 960, s);
             var p = rig.Pose;
             Near(BattingRig.UpperArm, (p.LeadElbow - p.Shoulder).Length, 1e-9, "upper arm length");
             Near(BattingRig.Forearm, (p.Hands - p.LeadElbow).Length, 1e-9, "forearm length");
-            Near(.34, (p.RearElbow - p.RearShoulder).Length, 1e-8, "rear upper arm");
-            Near(.32, (p.Hands - p.RearElbow).Length, 1e-8, "rear forearm");
+            Near(BattingRig.UpperArm, (p.RearElbow - p.RearShoulder).Length, 1e-8, "rear upper arm");
+            Near(BattingRig.Forearm, (p.Hands - p.RearElbow).Length, 1e-8, "rear forearm");
             Near(BattingRig.Thigh, (p.FrontKnee - p.Hip).Length, 1e-8, "front thigh");
             Near(BattingRig.Shin, (p.FrontAnkle - p.FrontKnee).Length, 1e-8, "front shin");
             Near(BattingRig.Thigh, (p.BackKnee - p.Hip).Length, 1e-8, "back thigh");
             Near(BattingRig.Shin, (p.BackAnkle - p.BackKnee).Length, 1e-8, "back shin");
-            Check(rig.ElbowFlexion is >= .349 and <= 2.357, "Elbow outside limits.");
-            Check(p.Bat.Blade(s).B.Y >= s.BatHalfThickness - 1e-8, "Bat penetrates pitch.");
-            Check(Math.Abs(rig.ShoulderSpeed) <= 14, "Shoulder velocity unbounded.");
+            Check(rig.ElbowFlexion is >= 0 and <= 2.357, "Elbow outside limits.");
+            var blade = p.Bat.Blade(s);
+            Check(Math.Min(blade.A.Y, blade.B.Y) >= s.BatHalfThickness - 1e-8, "Bat penetrates pitch.");
+            Check(Math.Abs(rig.ShoulderSpeed) <= 1440 * Math.PI / 180 + 1e-8, "Shoulder velocity unbounded.");
         }
     }
 }
