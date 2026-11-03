@@ -11,6 +11,7 @@ public partial class GameHud : Control
     private Label _maxSpeed = null!;
     private Label _maxLength = null!;
     private Label _maxHeight = null!;
+    private Label _fps = null!;
 
     public override void _Ready()
     {
@@ -21,6 +22,7 @@ public partial class GameHud : Control
         _maxSpeed = Stat("MAX BALL SPEED", "0.0 km/h", 226);
         _maxLength = Stat("MAX LENGTH FROM BATTER", "0.00 m", 414);
         _maxHeight = Stat("MAX HEIGHT ABOVE GROUND", "0.00 m", 602);
+        _fps = Stat("FPS", "—", 790);
 
         DeliveryPanel = new DeliveryPanel();
         AddChild(DeliveryPanel);
@@ -34,6 +36,7 @@ public partial class GameHud : Control
         _maxSpeed.Text = $"{SpeedUnits.ToKilometresPerHour(sim.Statistics.MaxSpeed):0.0} km/h";
         _maxLength.Text = $"{sim.Statistics.MaxLengthFromBatter:0.00} m";
         _maxHeight.Text = $"{sim.Statistics.MaxHeight:0.00} m";
+        _fps.Text = $"{Engine.GetFramesPerSecond():0}";
     }
 
     private Label Stat(string caption, string value, float x)

@@ -10,7 +10,7 @@
   },
   "Barricade": {
     "ClearGapMetres": 5,
-    "HeightMetres": 1.2,
+    "HeightMetres": 2,
     "ThicknessMetres": 0.25,
     "Restitution": null,
     "Friction": null

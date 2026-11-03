@@ -78,7 +78,8 @@ internal static class FieldChecks
             var hits = g.Surfaces.Where(surface => Contacts.Sweep(new(x - side * 2, s.BallRadius), new(x + side * 2, s.BallRadius),
                 s.BallRadius, surface.Edge, surface.Edge, out _, out _)).ToArray();
             Check(hits.Any(h => h.Kind == ContactKind.Boundary), "A sweep tunneled through the thin wedge");
-            Check(!g.Surfaces.Any(surface => Contacts.Sweep(new(x - side * 2, 2), new(x + side * 8, 2), s.BallRadius,
+            double clearHeight = g.Settings.Barricade.HeightMetres + .8;
+            Check(!g.Surfaces.Any(surface => Contacts.Sweep(new(x - side * 2, clearHeight), new(x + side * 8, clearHeight), s.BallRadius,
                 surface.Edge, surface.Edge, out _, out _)), "A clear aerial ball hit an invisible boundary wall");
         }
     }

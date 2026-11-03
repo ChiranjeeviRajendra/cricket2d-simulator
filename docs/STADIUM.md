@@ -12,7 +12,7 @@ Edit [`Config/field.json`](../Config/field.json) and restart the game. The same 
 | `Boundary.Restitution` | 0.20 | Rebound ratio in the direction normal to the contacted foam face; tunable approximation |
 | `Boundary.Friction` | 0.40 | Coulomb friction limit, including transfer between translation and spin; tunable approximation |
 | `Barricade.ClearGapMetres` | 5 | Clear ground from the wedge's outer toe to the barricade's inner face |
-| `Barricade.HeightMetres` | 1.2 | Height of the solid perimeter wall |
+| `Barricade.HeightMetres` | 2 | Height of the solid perimeter wall |
 | `Barricade.ThicknessMetres` | 0.25 | Wall thickness |
 | `Barricade.Restitution`, `Barricade.Friction` | null | Inherit `GroundRestitution` and `GroundFriction` from `Config/physics.json`; numbers override them |
 | `Parking.VergeMetres` | 1.5 | Grass verge outside the wall |

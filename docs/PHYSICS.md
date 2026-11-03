@@ -22,7 +22,7 @@ The setup panel and speed stats display **km/h**. Input is divided by 3.6 before
 | Boundary right of batter's normal stance | 75 m (configurable) |
 | Boundary wedge width / height | 0.23 m / 0.147 m |
 | Clear gap from outer wedge toe to barricade | 5 m |
-| Barricade height / thickness | 1.2 m / 0.25 m |
+| Barricade height / thickness | 2 m / 0.25 m |
 
 Maximum height is the greatest ball-centre world y coordinate above ground during the current delivery. Maximum length is the greatest absolute horizontal distance from the fixed normal stance at x = 19.08 m, including either side and the incoming delivery. Boundary cushions share this stance reference; pitching length continues to use the bowler-end wicket as its origin. Maxima are sampled at release, each physics substep and immediately before/after collision response, including wedge and barricade contacts. They are retained until the next delivery begins.
 

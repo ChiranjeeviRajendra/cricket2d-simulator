@@ -58,7 +58,7 @@ public sealed record BoundarySettings
 public sealed record BarricadeSettings
 {
     public double ClearGapMetres { get; init; } = 5;
-    public double HeightMetres { get; init; } = 1.2;
+    public double HeightMetres { get; init; } = 2;
     public double ThicknessMetres { get; init; } = .25;
     // Null inherits the pitch coefficient, including later edits to physics.json.
     public double? Restitution { get; init; }
