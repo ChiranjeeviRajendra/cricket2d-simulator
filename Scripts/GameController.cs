@@ -227,7 +227,7 @@ public partial class GameController : Node2D
         SmokeKey(Key.Enter);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        valid &= _hud.DeliveryPanel.Visible && await CheckPitchLengthSlider();
+        valid &= _hud.DeliveryPanel.Visible && await CheckDeliverySliders();
         SmokeKey(Key.Escape);
         valid &= _menu.Visible;
         SmokeButton(JoyButton.A);
@@ -337,56 +337,98 @@ public partial class GameController : Node2D
         }
     }
 
-    private async System.Threading.Tasks.Task<bool> CheckPitchLengthSlider()
+    private async System.Threading.Tasks.Task<bool> CheckDeliverySliders()
     {
-        var slider = (PitchLengthSlider)_hud.DeliveryPanel.FindChild("PitchLengthSlider", true, false);
-        var input = (SpinBox)_hud.DeliveryPanel.FindChild("PitchLengthInput", true, false);
-        bool valid = true;
-        float zero = slider.XForMetres(0), maximum = slider.XForMetres(25), wicket = slider.XForMetres(PitchDimensions.WicketSeparation);
+        var panel = _hud.DeliveryPanel;
+        var length = (PitchLengthSlider)panel.FindChild("PitchLengthSlider", true, false);
+        var speed = (HSlider)panel.FindChild("ReleaseSpeedSlider", true, false);
+        var height = (HSlider)panel.FindChild("ReleaseHeightSlider", true, false);
+        DeliverySettings? lastChange = null;
+        void Changed(DeliverySettings values) => lastChange = values;
+        panel.SettingsChanged += Changed;
+        bool valid = panel.FindChildren("*", "SpinBox", true, false).Count == 0 &&
+            panel.FindChildren("*", "LineEdit", true, false).Count == 0;
+        float zero = length.XForMetres(0), maximum = length.XForMetres(25), wicket = length.XForMetres(PitchDimensions.WicketSeparation);
         valid &= Math.Abs((zero - wicket) / (zero - maximum) - PitchDimensions.WicketSeparation / 25) < 1e-6;
         foreach (double value in new[] { 8.0, 16, 20.12, 25 })
         {
-            Drag(value);
-            valid &= Math.Abs(input.Value - value) < 1e-8 && Math.Abs(_hud.DeliveryPanel.Values.PitchingLength - value) < 1e-8;
+            DragLength(value);
+            valid &= Math.Abs(panel.Values.PitchingLength - value) < 1e-8 && lastChange == panel.Values;
         }
-        Drag(0);
-        valid &= input.Value == 8;
-        input.Value = 20.12;
-        valid &= Math.Abs(slider.Value - 20.12) < 1e-8;
-        input.GetLineEdit().GrabFocus();
-        input.GetLineEdit().Text = "23.45";
-        input.GetLineEdit().EmitSignal(LineEdit.SignalName.TextChanged, "23.45");
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        valid &= Math.Abs(slider.Value - 23.45) < 1e-8;
-        input.Apply();
-        valid &= Math.Abs(input.Value - 23.45) < 1e-8;
-        slider.GrabFocus();
+        DragLength(0);
+        valid &= length.Value == 8;
+        DragLength(23.45);
         SmokeButton(JoyButton.DpadLeft);
-        valid &= Math.Abs(input.Value - 23.55) < 1e-8;
+        valid &= Math.Abs(length.Value - 23.55) < 1e-8;
         SmokeButton(JoyButton.DpadRight);
-        valid &= Math.Abs(input.Value - 23.45) < 1e-8;
-        input.GetLineEdit().GrabFocus();
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        input.GetLineEdit().SelectAll();
-        foreach (char digit in "25")
+        valid &= Math.Abs(length.Value - 23.45) < 1e-8;
+        SmokeKey(Key.Left);
+        valid &= Math.Abs(length.Value - 23.55) < 1e-8;
+        SmokeKey(Key.Right);
+        valid &= Math.Abs(length.Value - 23.45) < 1e-8;
+        foreach (double value in new[] { 18.0, 115.2, 180 })
         {
-            GetViewport().PushInput(new InputEventKey { Pressed = true, Unicode = digit }, true);
-            GetViewport().PushInput(new InputEventKey { Pressed = false, Unicode = digit }, true);
-            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+            DragSlider(speed, value);
+            valid &= Math.Abs(panel.Values.Speed - SpeedUnits.ToMetresPerSecond(value)) < 1e-8 && lastChange == panel.Values;
+            valid &= ((Label)panel.FindChild("ReleaseSpeedSliderValue", true, false)).Text == $"{value:0.0} km/h";
         }
-        valid &= Math.Abs(input.Value - 25) < 1e-8 && Math.Abs(slider.Value - 25) < 1e-8;
-        input.Value = 16;
-        GD.Print(valid ? "SMOKE PASS: scaled wickets, slider drag/bounds, numeric live sync, and controller pitch adjustment." :
-            "SMOKE FAIL: pitch-length slider or input synchronization.");
+        SmokeButton(JoyButton.DpadRight);
+        valid &= speed.Value == 180;
+        foreach (double value in new[] { 1.53, 2.15, 2.16 })
+        {
+            DragSlider(height, value);
+            valid &= Math.Abs(panel.Values.ReleaseHeight - value) < 1e-8 && lastChange == panel.Values;
+            valid &= ((Label)panel.FindChild("ReleaseHeightSliderValue", true, false)).Text == $"{value:0.00} m";
+        }
+        SmokeButton(JoyButton.DpadRight);
+        valid &= Math.Abs(height.Value - 2.16) < 1e-8;
+        // Restore the normal delivery and verify keyboard/controller focus follows each box.
+        length.Value = 16; speed.Value = 115.2; height.Value = 2.15;
+        length.GrabFocus();
+        SmokeKey(Key.Down);
+        valid &= speed.HasFocus();
+        SmokeKey(Key.Right);
+        valid &= Math.Abs(speed.Value - 115.3) < 1e-8;
+        SmokeKey(Key.Left);
+        SmokeKey(Key.Tab);
+        valid &= height.HasFocus();
+        SmokeKey(Key.Left);
+        valid &= Math.Abs(height.Value - 2.14) < 1e-8;
+        SmokeKey(Key.Right);
+        SmokeKey(Key.Tab);
+        valid &= length.HasFocus();
+        SmokeButton(JoyButton.DpadDown);
+        valid &= speed.HasFocus();
+        SmokeButton(JoyButton.DpadRight);
+        valid &= Math.Abs(speed.Value - 115.3) < 1e-8;
+        SmokeButton(JoyButton.DpadLeft);
+        SmokeButton(JoyButton.DpadDown);
+        valid &= height.HasFocus();
+        SmokeButton(JoyButton.DpadLeft);
+        valid &= Math.Abs(height.Value - 2.14) < 1e-8;
+        SmokeButton(JoyButton.DpadRight);
+        SmokeButton(JoyButton.DpadDown);
+        valid &= length.HasFocus() && Math.Abs(panel.Values.Speed - 32) < 1e-8 &&
+            Math.Abs(panel.Values.ReleaseHeight - 2.15) < 1e-8;
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        valid &= panel.GetGlobalRect().Encloses(length.GetGlobalRect()) &&
+            panel.GetGlobalRect().Encloses(height.GetGlobalRect());
+        panel.SettingsChanged -= Changed;
+        GD.Print(valid ? "SMOKE PASS: three boxed sliders, scaled wickets, mouse drag/bounds, live values, keyboard/controller adjustments." :
+            "SMOKE FAIL: delivery sliders or keyboard/controller navigation.");
         return valid;
 
-        void Drag(double value)
+        void DragLength(double value) => Drag(length, new(length.XForMetres(length.Value), 72), new(length.XForMetres(value), 72));
+        void DragSlider(HSlider slider, double value)
         {
-            Vector2 start = slider.GlobalPosition + new Vector2(slider.XForMetres(slider.Value), 72);
-            Vector2 end = slider.GlobalPosition + new Vector2(slider.XForMetres(value), 72);
+            float thumbWidth = slider.GetThemeIcon("grabber").GetWidth();
+            Vector2 Point(double v) => new(thumbWidth / 2 + (float)((v - slider.MinValue) /
+                (slider.MaxValue - slider.MinValue)) * (slider.Size.X - thumbWidth), slider.Size.Y / 2);
+            Drag(slider, Point(slider.Value), Point(value));
+        }
+        void Drag(Control slider, Vector2 from, Vector2 to)
+        {
+            Vector2 start = slider.GlobalPosition + from, end = slider.GlobalPosition + to;
             GetViewport().PushInput(new InputEventMouseMotion { Position = start, GlobalPosition = start }, true);
             GetViewport().PushInput(new InputEventMouseButton { Position = start, GlobalPosition = start,
                 ButtonIndex = MouseButton.Left, ButtonMask = MouseButtonMask.Left, Pressed = true }, true);
@@ -482,7 +524,7 @@ public partial class GameController : Node2D
         OpenSetup();
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         GetViewport().GetTexture().GetImage().SavePng("res://artifacts/setup.png");
-        var length = (SpinBox)_hud.DeliveryPanel.FindChild("PitchLengthInput", true, false);
+        var length = (PitchLengthSlider)_hud.DeliveryPanel.FindChild("PitchLengthSlider", true, false);
         foreach (double metres in new[] { 20.12, 25 })
         {
             length.Value = metres;

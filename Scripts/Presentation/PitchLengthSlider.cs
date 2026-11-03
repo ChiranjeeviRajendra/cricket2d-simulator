@@ -25,7 +25,7 @@ public partial class PitchLengthSlider : Godot.Range
     {
         float left = XForMetres(25), right = XForMetres(0), minimum = XForMetres(8), thumb = XForMetres(Value);
         Color ink = VisualTheme.Ink;
-        // The enclosing pitch-length group provides one shared focus frame for the input and rail.
+        // The enclosing pitch-length group provides the focus frame for the rail.
         // The unavailable 0–8 m stretch remains visible so the two wickets retain their true scale.
         DrawLine(new(left, RailY), new(right, RailY), VisualTheme.Border, 2, true);
         DrawLine(new(left, RailY), new(minimum, RailY), ink, 4, true);

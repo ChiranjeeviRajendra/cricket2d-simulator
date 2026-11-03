@@ -28,7 +28,7 @@ Batting starts on the idle field. Press **A / Enter** to open **Batting Practice
 | Pitching length | First ground contact, measured **from the bowler-end wicket** toward the striker | 8–25 m |
 | Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.16 m (153–216 cm) |
 
-Pitch length and its slider share one frame at the top. Drag the slider or edit the number; they update each other live. The entire diagram uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the slider farther from the bowler; right moves it closer. D-pad up/down selects pitch length, speed and height in that order.
+Pitch length, release speed and release height each have a slider in their own unnumbered box, with live values instead of text inputs. The pitch diagram stays at the top and uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Drag with the mouse or adjust with left/right arrows or the D-pad. Up/down and Tab cycle through the three settings.
 
 With the panel open, press **A / Enter** to begin. The automated bowler winds up for 1.25 s, then releases the ball. You can move the bat during the windup. There is **no timed reset**: the ball continues naturally until you press **A / Enter** for the next delivery settings. Opening settings and beginning a delivery require separate presses. Opening settings retains the previous delivery's maxima; beginning a delivery clears them. **B / Escape** returns to the main menu from either settings or play. Leaving the window pauses the simulation.
 
@@ -54,8 +54,8 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 | --- | --- | --- |
 | Aim the full shoulder swing | Left stick, rotate through 360 degrees | WASD (diagonals supported) |
 | Aim the blade about the fist | Right stick, constrained by current swing angle | Arrow keys (diagonals supported) |
-| Select setup field | D-pad up / down | Tab / Shift+Tab or click |
-| Change setup value | D-pad left / right | Type a number or use the spinner |
+| Select setup field | D-pad up / down | Up / down, Tab / Shift+Tab, or click |
+| Change setup value | D-pad left / right | Left / right arrows or drag the slider |
 | Begin from settings | A / south button | Enter |
 | Open / return to settings | A / south button | Enter |
 | Toggle trajectory | — | T |
@@ -135,7 +135,7 @@ Run the actual Godot scene through A-button setup, bowling, bounce, continued pl
 .\tools\Run.ps1 -Headless -SmokeTest
 ```
 
-Tests return a nonzero exit code on failure. They cover analytic vacuum flight, drag, 1,000 random bounce-energy checks, rolling friction, bat impulses, fast swept contacts, 48 launch combinations, invalid/unreachable deliveries, landing accuracy, continued play without a timed reset, retained/reset maxima, km/h conversion, playable swing sequences, bone lengths and determinism at different render rates. Camera checks cover both travel directions, direction changes, high shots, reset, and fixed boundary/height measurements. The Godot smoke test verifies A/Enter and B/Escape parity, mouse/keyboard/stick navigation, disabled choices, scaled slider dragging, live numeric editing, separate opening/beginning presses, speed entry in km/h, both stick circles, screen directions, and independent wrist rotation using the loaded batsman configuration.
+Tests return a nonzero exit code on failure. They cover analytic vacuum flight, drag, 1,000 random bounce-energy checks, rolling friction, bat impulses, fast swept contacts, 48 launch combinations, invalid/unreachable deliveries, landing accuracy, continued play without a timed reset, retained/reset maxima, km/h conversion, playable swing sequences, bone lengths and determinism at different render rates. Camera checks cover both travel directions, direction changes, high shots, reset, and fixed boundary/height measurements. The Godot smoke test verifies A/Enter and B/Escape parity, mouse/keyboard/stick navigation, disabled choices, all three sliders' dragging/bounds/live values, focus cycling, separate opening/beginning presses, speed conversion from km/h, both stick circles, screen directions, and independent wrist rotation using the loaded batsman configuration.
 
 ## Current scope
 
