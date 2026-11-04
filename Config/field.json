@@ -17,7 +17,7 @@
   },
   "Seating": {
     "WidthMetres": 21.5,
-    "Rows": 28,
+    "Rows": 10,
     "Sections": 16,
     "AisleWidthMetres": 1.8,
     "SeatSpacingMetres": 0.62,
@@ -25,7 +25,7 @@
     "CrowdSeed": 4821
   },
   "OuterBarricade": {
-    "HeightMetres": 25,
+    "HeightMetres": 15,
     "ThicknessMetres": 0.25,
     "Restitution": null,
     "Friction": null
