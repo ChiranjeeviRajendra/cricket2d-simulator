@@ -14,6 +14,51 @@ public readonly record struct Capsule(Vec2 A, Vec2 B, double Radius)
 
 public static class Contacts
 {
+    /// <summary>Passive static-surface impact, including Coulomb friction and sphere spin.</summary>
+    public static BallState SurfaceImpulse(BallState ball, Vec2 normal, double restitution,
+        double friction, SimulationSettings s)
+    {
+        normal = normal.Normalized;
+        double vn = Vec2.Dot(ball.Velocity, normal);
+        if (vn >= 0) return ball;
+        // Small closing speeds settle rather than producing an endless sequence of micro-bounces.
+        double e = -vn < .2 ? 0 : restitution;
+        double jn = -(1 + e) * s.BallMass * vn;
+        Vec2 tangent = normal.Perpendicular;
+        double inertia = .4 * s.BallMass * s.BallRadius * s.BallRadius;
+        double slip = Vec2.Dot(ball.Velocity, tangent) - ball.Spin * s.BallRadius;
+        double jt = Math.Clamp(-slip / (1 / s.BallMass + s.BallRadius * s.BallRadius / inertia), -friction * jn, friction * jn);
+        return ball with
+        {
+            Velocity = ball.Velocity + (jn * normal + jt * tangent) / s.BallMass,
+            Spin = ball.Spin - s.BallRadius * jt / inertia
+        };
+    }
+
+    /// <summary>Gravity-driven slip/rolling on a supported slope or the barricade top.</summary>
+    public static BallState SurfaceMotion(BallState ball, FieldSurface surface, double dt, SimulationSettings s)
+    {
+        Vec2 n = surface.Normal, t = n.Perpendicular;
+        Vec2 acceleration = BallFlight.Acceleration(ball.Velocity, ball.Spin, s);
+        if (Vec2.Dot(acceleration, n) > 0) return BallFlight.Integrate(ball, dt, s);
+        double load = Math.Max(0, -Vec2.Dot(acceleration, n));
+        double before = Vec2.Dot(ball.Velocity, t), speed = before + Vec2.Dot(acceleration, t) * dt;
+        double spin = ball.Spin * Math.Exp(-s.SpinDecay * dt);
+        double inertia = .4 * s.BallMass * s.BallRadius * s.BallRadius;
+        double required = -(speed - spin * s.BallRadius) / (1 / s.BallMass + s.BallRadius * s.BallRadius / inertia);
+        double limit = surface.Friction * s.BallMass * load * dt;
+        double impulse = Math.Clamp(required, -limit, limit);
+        speed += impulse / s.BallMass;
+        spin -= s.BallRadius * impulse / inertia;
+        if (Math.Abs(required) <= limit)
+        {
+            speed = Math.Sign(speed) * Math.Max(0, Math.Abs(speed) - s.RollingResistance * load * dt);
+            spin = speed / s.BallRadius;
+        }
+        Vec2 position = surface.Edge.Closest(ball.Position) + n * (s.BallRadius + 1e-5) + t * ((before + speed) * dt / 2);
+        return new(position, t * speed, spin);
+    }
+
     /// <summary>
     /// Conservative advancement against a translating/rotating capsule. A Lipschitz bound
     /// prevents stepping across thin objects, even when neither endpoint overlaps.

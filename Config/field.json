@@ -1,0 +1,33 @@
+{
+  "Boundary": {
+    "LeftDistanceMetres": 40,
+    "RightDistanceMetres": 75,
+    "DepthRadiusMetres": 45,
+    "WidthMetres": 0.23,
+    "HeightMetres": 0.147,
+    "Restitution": 0.20,
+    "Friction": 0.40
+  },
+  "Barricade": {
+    "ClearGapMetres": 5,
+    "HeightMetres": 1.5,
+    "ThicknessMetres": 0.25,
+    "Restitution": null,
+    "Friction": null
+  },
+  "Seating": {
+    "WidthMetres": 21.5,
+    "Rows": 10,
+    "Sections": 16,
+    "AisleWidthMetres": 1.8,
+    "SeatSpacingMetres": 0.62,
+    "Occupancy": 0.82,
+    "CrowdSeed": 4821
+  },
+  "OuterBarricade": {
+    "HeightMetres": 15,
+    "ThicknessMetres": 0.25,
+    "Restitution": null,
+    "Friction": null
+  }
+}

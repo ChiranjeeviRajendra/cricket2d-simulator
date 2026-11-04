@@ -8,8 +8,13 @@ namespace Cricket2D;
 public partial class GroundView : Node2D
 {
     public Simulation Simulation { get; set; } = null!;
-    public bool ShowTrajectory { get; set; } = true;
-    public bool Diagnostics { get; set; }
+    private bool _showTrajectory = true, _diagnostics, _viewDirty = true;
+    private BattingFrame _lastFrame;
+    private DeliveryPhase _lastPhase;
+    private DeliveryPlan? _preview;
+    private Func<Vec2, Vector2> _worldToScreen = null!;
+    public bool ShowTrajectory { get => _showTrajectory; set { _viewDirty |= _showTrajectory != value; _showTrajectory = value; } }
+    public bool Diagnostics { get => _diagnostics; set { _viewDirty |= _diagnostics != value; _diagnostics = value; } }
     private double _pausedFraction;
     private long _resumeTick = -1;
     private bool _interpolationPaused;
@@ -21,12 +26,12 @@ public partial class GroundView : Node2D
             if (value && !_interpolationPaused) _pausedFraction = RenderFraction;
             if (!value && _interpolationPaused) _resumeTick = Simulation.TickCount;
             _interpolationPaused = value;
+            _viewDirty = true;
         }
     }
     private double RenderFraction => Simulation.Phase == DeliveryPhase.Setup ? 1 :
         _interpolationPaused || _resumeTick == Simulation.TickCount ? _pausedFraction : Engine.GetPhysicsInterpolationFraction();
-    public DeliveryPlan? Preview { get; set; }
-    private const float Left = (float)FieldCamera.Left;
+    public DeliveryPlan? Preview { get => _preview; set { _viewDirty |= !ReferenceEquals(_preview, value); _preview = value; } }
     private const float GroundY = (float)FieldCamera.GroundY;
     private readonly FieldCamera _camera = new();
     private float PixelsPerMetre => (float)_camera.PixelsPerMetre;
@@ -38,16 +43,25 @@ public partial class GroundView : Node2D
     private static readonly Color White = new("e2e9d9");
     private static readonly Color ShadowWhite = new("9caeaa");
     private static readonly Color BatWood = new("d4b781");
-    private Font _font = null!;
+    private FieldDrawing _fieldDrawing = null!;
+    internal int SceneryRebuilds => _fieldDrawing.RebuildCount;
 
     public override void _Ready()
     {
         PhysicsInterpolationMode = PhysicsInterpolationModeEnum.Off;
-        _font = new SystemFont { FontNames = ["Bahnschrift", "Segoe UI"] };
+        TextureFilter = TextureFilterEnum.LinearWithMipmaps;
+        _fieldDrawing = new(Simulation.Field);
+        _worldToScreen = W;
     }
 
     public override void _Process(double delta)
     {
+        if (!IsVisibleInTree()) return;
+        if ((Simulation.Phase == DeliveryPhase.Setup || InterpolationPaused) && !_viewDirty &&
+            _lastPhase == Simulation.Phase && _lastFrame == Simulation.Batter.Frame) return;
+        _lastPhase = Simulation.Phase;
+        _lastFrame = Simulation.Batter.Frame;
+        _viewDirty = false;
         if (TrackedBallPosition is Vec2 ball) _camera.Fit(ball);
         else _camera.Reset();
         QueueRedraw();
@@ -56,10 +70,13 @@ public partial class GroundView : Node2D
     internal void SetCaptureBall(Vec2? position)
     {
         _captureBall = position;
+        _viewDirty = true;
         _camera.Reset();
         if (position is Vec2 ball) _camera.Fit(ball);
         QueueRedraw();
     }
+
+    public override void _ExitTree() => _fieldDrawing?.Dispose();
 
     public override void _Draw()
     {
@@ -75,45 +92,7 @@ public partial class GroundView : Node2D
         Ball();
     }
 
-    private void Environment()
-    {
-        DrawRect(new(0, 0, 1440, 900), VisualTheme.Background);
-        float sceneryOffset = GroundY - 627;
-        // A restrained evening practice ground, all scenery is behind the physical plane.
-        for (int y = 96; y < 500 + sceneryOffset; y += 4)
-        {
-            float t = (y - 96) / (404 + sceneryOffset);
-            DrawRect(new(0, y, 1440, 4), new Color("101f26").Lerp(new("36565a"), t));
-        }
-        DrawSetTransform(new(0, sceneryOffset));
-        DrawCircle(new(1140, 333), 36, new Color(0.77f, 0.86f, 0.68f, 0.08f));
-        DrawCircle(new(1140, 333), 24, new Color("a4b8a0"));
-        DrawColoredPolygon([new(0, 471), new(120, 434), new(256, 466), new(410, 440),
-            new(570, 477), new(760, 445), new(940, 473), new(1110, 438), new(1280, 462), new(1440, 432),
-            new(1440, 600), new(0, 600)], new("294347"));
-        for (int i = 0; i < 32; i++)
-        {
-            float x = i * 49;
-            float top = 474 - (float)(Math.Sin(i * 8.2) * 9);
-            DrawCircle(new(x, top), 23 + i % 3 * 6, new("223c3e"));
-            DrawLine(new(x, top), new(x, 512), new("223c3e"), 7);
-        }
-        DrawRect(new(0, 504, 1440, 123), new Color("304b42"));
-        for (int i = 0; i < 7; i++)
-            DrawRect(new(0, 510 + i * 19, 1440, 9), new Color(0.3f, 0.42f, 0.32f, 0.12f));
-        DrawLine(new(0, 523), new(1440, 523), new("739081"), 1);
-        for (int x = 15; x < 1440; x += 47) DrawLine(new(x, 516), new(x, 540), new("5e7c70"), 1);
-        // Sparse grass blades, deterministic to avoid flicker.
-        for (int i = 0; i < 175; i++)
-        {
-            float x = i * 8.27f;
-            float y = 565 + (i * 37 % 58);
-            DrawLine(new(x, y), new(x + 2, y - 3), new Color(0.56f, 0.65f, 0.41f, 0.16f), 1);
-        }
-        DrawSetTransform(Vector2.Zero);
-        DrawRect(new(0, GroundY, 1440, 33), new("6c7053"));
-        DrawRect(new(0, GroundY + 33, 1440, 900 - GroundY - 33), new("14282c"));
-    }
+    private void Environment() => _fieldDrawing.Background(this, _camera);
 
     private void Pitch()
     {
@@ -168,7 +147,7 @@ public partial class GroundView : Node2D
     private void Batter()
     {
         BattingFrame frame = BattingFrame.Interpolate(Simulation.PreviousFrame, Simulation.Batter.Frame, RenderFraction);
-        BatterDrawing.Draw(this, BattingRig.BuildPose(frame, Simulation.Batting), Simulation.Settings, W, PixelsPerMetre, Diagnostics);
+        BatterDrawing.Draw(this, BattingRig.BuildPose(frame, Simulation.Batting), Simulation.Settings, _worldToScreen, PixelsPerMetre, Diagnostics);
     }
     private void Bowler()
     {
@@ -183,7 +162,7 @@ public partial class GroundView : Node2D
         Vec2 frontAnkle = new(hip.X + 0.29, 0.06);
         Vec2 rearKnee = BattingRig.SolveJoint(hip, rearAnkle, 0.46 * scale, 0.43 * scale, 1);
         Vec2 frontKnee = BattingRig.SolveJoint(hip, frontAnkle, 0.46 * scale, 0.43 * scale, 1);
-        DrawEllipse(W(new(hip.X, 0)), new Vector2(26, 4) * Zoom, new Color(0, 0, 0, 0.2f));
+        DrawingPrimitives.Ellipse(this, W(new(hip.X, 0)), new Vector2(26, 4) * Zoom, new Color(0, 0, 0, 0.2f));
         Limb(hip, rearKnee, new("658d8c"), 0.12);
         Limb(rearKnee, rearAnkle, new("658d8c"), 0.10);
         Shoe(rearAnkle, ShadowWhite);
@@ -226,7 +205,7 @@ public partial class GroundView : Node2D
         if (TrackedBallPosition is not Vec2 position) return;
         Vector2 screen = W(position);
         Vector2 ground = W(new(position.X, 0));
-        DrawEllipse(ground, new(Math.Max(2, (4 + (float)position.Y) * Zoom), 1.5f), new Color(0, 0, 0, 0.15f));
+        DrawingPrimitives.Ellipse(this, ground, new(Math.Max(2, (4 + (float)position.Y) * Zoom), 1.5f), new Color(0, 0, 0, 0.15f));
         // Minimum visible radius and halo keep distant balls readable; physics size is unchanged.
         DrawCircle(screen, 5, new Color(1, 0.6f, 0.4f, 0.12f));
         DrawCircle(screen, Math.Max(2.2f, (float)Simulation.Settings.BallRadius * PixelsPerMetre), new("e8735c"));
@@ -235,25 +214,7 @@ public partial class GroundView : Node2D
             DrawLine(screen, W(position + Simulation.Ball.Velocity * 0.04), VisualTheme.Accent, 1, true);
     }
 
-    private void Boundaries()
-    {
-        Boundary(FieldLayout.LeftBoundaryX, FieldLayout.LeftBoundaryDistance);
-        Boundary(FieldLayout.RightBoundaryX, FieldLayout.RightBoundaryDistance);
-    }
-
-    private void Boundary(double worldX, double distance)
-    {
-        Vector2 root = W(new(worldX, 0));
-        // Markers belong to the field. Never substitute an edge-pinned label when off-screen.
-        if (root.X < FieldCamera.Left || root.X > FieldCamera.Right) return;
-        float top = GroundY - Math.Max(32, PixelsPerMetre);
-        DrawLine(root, new(root.X, top), VisualTheme.Accent, 2, true);
-        DrawCircle(root, 3, VisualTheme.Accent);
-        float boardX = root.X - 59;
-        DrawRect(new(boardX, top - 28, 118, 25), VisualTheme.Panel);
-        DrawRect(new(boardX, top - 28, 118, 25), VisualTheme.Accent, false, 1);
-        Text(new(boardX + 8, top - 11), $"{distance:0} m BOUNDARY", 12, VisualTheme.Accent);
-    }
+    private void Boundaries() => _fieldDrawing.Foreground();
 
     private Vector2 W(Vec2 p)
     {
@@ -268,11 +229,4 @@ public partial class GroundView : Node2D
         DrawCircle(W(b), pixels / 2, color);
     }
     private void Shoe(Vec2 ankle, Color color) => Limb(ankle + new Vec2(-0.10, -0.04), ankle + new Vec2(0.05, -0.04), color, 0.075);
-    private void DrawEllipse(Vector2 center, Vector2 radius, Color color)
-    {
-        var points = new Vector2[24];
-        for (int i = 0; i < points.Length; i++) points[i] = center + Vector2.FromAngle(i * MathF.Tau / points.Length) * radius;
-        DrawColoredPolygon(points, color);
-    }
-    private void Text(Vector2 at, string value, int size, Color color) => DrawString(_font, at, value, HorizontalAlignment.Left, -1, size, color);
 }

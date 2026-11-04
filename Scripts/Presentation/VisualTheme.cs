@@ -29,25 +29,6 @@ public static class VisualTheme
         theme.SetStylebox("pressed", "Button", Box(Ink, Ink, 8, 14));
         theme.SetStylebox("focus", "Button", Box(Ink, Ink, 8, 14));
         theme.SetStylebox("disabled", "Button", Box(new("dcd5c9"), new("cbc3b6"), 8, 14));
-        theme.SetStylebox("normal", "LineEdit", Box(Panel, Border, 6, 8));
-        var inputFocus = Box(Colors.Transparent, Ink, 6, 8);
-        inputFocus.BorderWidthLeft = inputFocus.BorderWidthRight = inputFocus.BorderWidthTop = inputFocus.BorderWidthBottom = 2;
-        theme.SetStylebox("focus", "LineEdit", inputFocus);
-        theme.SetColor("font_color", "LineEdit", Ink);
-        theme.SetColor("caret_color", "LineEdit", Ink);
-        theme.SetColor("selection_color", "LineEdit", Ink);
-        theme.SetColor("font_selected_color", "LineEdit", OnDark);
-        foreach (string direction in new[] { "up", "down" })
-        {
-            theme.SetColor(direction + "_icon_modulate", "SpinBox", Ink);
-            theme.SetColor(direction + "_hover_icon_modulate", "SpinBox", OnDark);
-            theme.SetColor(direction + "_pressed_icon_modulate", "SpinBox", OnDark);
-            theme.SetColor(direction + "_disabled_icon_modulate", "SpinBox", Muted);
-            theme.SetStylebox(direction + "_background", "SpinBox", Box(Panel, Border, 3, 0));
-            theme.SetStylebox(direction + "_background_hovered", "SpinBox", Box(Ink, Ink, 3, 0));
-            theme.SetStylebox(direction + "_background_pressed", "SpinBox", Box(Ink, Ink, 3, 0));
-        }
-        theme.SetConstant("buttons_width", "SpinBox", 22);
         theme.SetStylebox("panel", "PopupMenu", Box(Panel, Border));
         theme.SetStylebox("hover", "PopupMenu", Box(Ink, Ink, 4, 8));
         theme.SetColor("font_color", "PopupMenu", Ink);
@@ -57,14 +38,19 @@ public static class VisualTheme
 
     public static void NavigationButton(Button button)
     {
+        var normal = Box(Panel, Border, 8, 14);
+        var focused = Box(Ink, Ink, 8, 14);
         void Refresh()
         {
             bool selected = button.HasFocus();
-            Color ink = selected ? OnDark : Ink, fill = selected ? Ink : Panel;
-            foreach (string state in new[] { "normal", "hover", "pressed" })
-                button.AddThemeStyleboxOverride(state, Box(fill, selected ? Ink : Border, 8, 14));
-            foreach (string state in new[] { "font_color", "font_hover_color", "font_pressed_color" })
-                button.AddThemeColorOverride(state, ink);
+            Color ink = selected ? OnDark : Ink;
+            StyleBoxFlat style = selected ? focused : normal;
+            button.AddThemeStyleboxOverride("normal", style);
+            button.AddThemeStyleboxOverride("hover", style);
+            button.AddThemeStyleboxOverride("pressed", style);
+            button.AddThemeColorOverride("font_color", ink);
+            button.AddThemeColorOverride("font_hover_color", ink);
+            button.AddThemeColorOverride("font_pressed_color", ink);
         }
         button.FocusEntered += Refresh;
         button.FocusExited += Refresh;

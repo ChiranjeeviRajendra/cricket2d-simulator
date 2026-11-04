@@ -13,7 +13,7 @@ public static class BatterDrawing
     {
         float Zoom = PixelsPerMetre / (float)FieldCamera.BasePixelsPerMetre;
         // Render the same bones that position the physical bat, without stretching either arm.
-        DrawEllipse(W(new(FieldLayout.BatterReferenceX, 0.015)), new Vector2(29, 4) * Zoom, new Color(0, 0, 0, 0.20f));
+        DrawingPrimitives.Ellipse(canvas, W(new(FieldLayout.BatterReferenceX, 0.015)), new Vector2(29, 4) * Zoom, new Color(0, 0, 0, 0.20f));
         Limb(p.Hip, p.BackKnee, ShadowWhite, 0.135);
         Limb(p.BackKnee, p.BackAnkle, ShadowWhite, 0.105);
         Shoe(p.RearFoot, new("aebeb5"));
@@ -68,12 +68,5 @@ public static class BatterDrawing
             canvas.DrawCircle(W(b), pixels / 2, color);
         }
         void Shoe(FootPose foot, Color color) => Limb(foot.Toe, foot.Heel, color, .075);
-        void DrawEllipse(Vector2 center, Vector2 radius, Color color)
-        {
-            var points = new Vector2[24];
-            for (int i = 0; i < points.Length; i++)
-                points[i] = center + Vector2.FromAngle(i * MathF.Tau / points.Length) * radius;
-            canvas.DrawColoredPolygon(points, color);
-        }
     }
 }

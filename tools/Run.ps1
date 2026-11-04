@@ -4,9 +4,14 @@ param(
     [switch]$Test,
     [switch]$Headless,
     [switch]$SmokeTest,
-    [switch]$BattingPreview
+    [switch]$BattingPreview,
+    [switch]$FourK,
+    [switch]$PerformanceTest
 )
 $ErrorActionPreference = 'Stop'
+if ($PerformanceTest -and ($Headless -or $BattingPreview -or $SmokeTest)) {
+    throw 'PerformanceTest needs the rendered game; do not combine it with Headless, BattingPreview or SmokeTest.'
+}
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
 $env:DOTNET_CLI_HOME = Join-Path $projectRoot '.dotnet-home'
@@ -31,7 +36,10 @@ $packageSource = Join-Path (Split-Path -Parent $GodotPath) 'GodotSharp\Tools\nup
 $localPackages = Join-Path $projectRoot '.local\godot-packages'
 New-Item -ItemType Directory -Path $localPackages -Force | Out-Null
 if (Test-Path -LiteralPath $packageSource) {
-    Get-ChildItem -LiteralPath $packageSource -Filter '*.nupkg' | Copy-Item -Destination $localPackages -Force
+    foreach ($package in Get-ChildItem -LiteralPath $packageSource -Filter '*.nupkg') {
+        $destination = Join-Path $localPackages $package.Name
+        if (-not (Test-Path -LiteralPath $destination)) { Copy-Item -LiteralPath $package.FullName -Destination $destination }
+    }
 }
 # The installed Godot .NET distribution supplies all four dependencies, so no app install is needed.
 & dotnet build Cricket2D.csproj --nologo -p:NuGetAudit=false -p:RestoreIgnoreFailedSources=true
@@ -41,11 +49,18 @@ if ($Test) {
     if ($LASTEXITCODE -ne 0) { throw 'Physics validation failed.' }
 }
 if ($BuildOnly) { exit 0 }
+# Import textures and audio before runtime, including when launching a fresh checkout.
+& $GodotPath --headless --editor --path $projectRoot --import
+if ($LASTEXITCODE -ne 0) { throw 'Godot asset import failed.' }
 $godotArguments = @('--path', $projectRoot)
 if ($Headless) { $godotArguments += '--headless' }
+if ($FourK -or $PerformanceTest) { $godotArguments += @('--resolution', '3840x2160', '--fullscreen') }
 $userArguments = @()
 if ($BattingPreview) { $userArguments += '--batting-preview' }
 if ($SmokeTest) { $userArguments += '--smoke-test' }
+if ($PerformanceTest) {
+    $userArguments += '--performance-test'
+}
 if ($userArguments.Count -gt 0) { $godotArguments += @('--') + $userArguments }
 & $GodotPath @godotArguments
 exit $LASTEXITCODE

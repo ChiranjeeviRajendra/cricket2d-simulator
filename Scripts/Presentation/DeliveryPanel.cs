@@ -1,5 +1,4 @@
 using Cricket.Physics;
-using System.Globalization;
 using Godot;
 
 namespace Cricket2D;
@@ -10,15 +9,16 @@ public partial class DeliveryPanel : Control
     public event Action<DeliverySettings>? BeginRequested;
     public event Action<DeliverySettings>? SettingsChanged;
     public DeliverySettings Values => new(SpeedUnits.ToMetresPerSecond(_speed.Value), _length.Value, _height.Value);
-    private SpinBox _speed = null!;
-    private SpinBox _length = null!;
-    private SpinBox _height = null!;
-    private PitchLengthSlider _lengthSlider = null!;
+    private HSlider _speed = null!;
+    private PitchLengthSlider _length = null!;
+    private HSlider _height = null!;
     private Label _error = null!;
-    private readonly List<SpinBox> _fields = [];
+    private readonly List<Godot.Range> _fields = [];
     private readonly List<PanelContainer> _rows = [];
     private int _selected;
     private PanelContainer _card = null!;
+    private readonly StyleBoxFlat _rowNormal = VisualTheme.Box(Colors.Transparent, VisualTheme.Border, 6, 12);
+    private readonly StyleBoxFlat _rowSelected = VisualTheme.Box(Colors.Transparent, VisualTheme.Ink, 6, 12);
 
     public override void _Ready()
     {
@@ -35,24 +35,26 @@ public partial class DeliveryPanel : Control
         stack.AddChild(VisualTheme.Label("Batting Practice Settings", 32));
         var rule = new HSeparator();
         stack.AddChild(rule);
-        _lengthSlider = new PitchLengthSlider
+        _length = new PitchLengthSlider
         {
             Name = "PitchLengthSlider", MinValue = DeliverySettings.MinPitchingLength,
             MaxValue = DeliverySettings.MaxPitchingLength, Step = .01, Value = 16,
             CustomMinimumSize = new(0, 164)
         };
-        _length = Field(stack, "01", "Pitch length", "Distance from the bowler's stumps", "m",
-            DeliverySettings.MinPitchingLength, DeliverySettings.MaxPitchingLength, 0.01, 16, _lengthSlider);
-        _length.Name = "PitchLengthInput";
-        _length.ValueChanged += value => _lengthSlider.Value = value;
-        _lengthSlider.ValueChanged += value => _length.Value = value;
-        _length.GetLineEdit().TextChanged += PreviewTypedLength;
-        _lengthSlider.FocusEntered += () => { _selected = 0; RefreshSelection(); };
-        _speed = Field(stack, "02", "Release speed", "Kilometres per hour at release", "km/h",
+        Field(stack, "Pitch length", "Distance from the bowler's stumps", _length);
+        _speed = Slider("ReleaseSpeedSlider",
             SpeedUnits.ToKilometresPerHour(DeliverySettings.MinSpeed),
             SpeedUnits.ToKilometresPerHour(DeliverySettings.MaxSpeed), 0.1, 115.2);
-        _height = Field(stack, "03", "Release height", "Height above the pitch · 1.53–2.16 m", "m",
+        Field(stack, "Release speed", "Kilometres per hour at release", _speed, "0.0", "km/h");
+        _height = Slider("ReleaseHeightSlider",
             DeliverySettings.MinReleaseHeight, DeliverySettings.MaxReleaseHeight, 0.01, 2.15);
+        Field(stack, "Release height", "Height above the pitch", _height, "0.00", "m");
+        for (int i = 0; i < _fields.Count; i++)
+        {
+            var field = _fields[i];
+            field.FocusNext = field.FocusNeighborBottom = field.GetPathTo(_fields[(i + 1) % _fields.Count]);
+            field.FocusPrevious = field.FocusNeighborTop = field.GetPathTo(_fields[(i + _fields.Count - 1) % _fields.Count]);
+        }
         _error = VisualTheme.Label("", 14, VisualTheme.Coral);
         _error.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _error.CustomMinimumSize = new Vector2(720, 22);
@@ -67,18 +69,14 @@ public partial class DeliveryPanel : Control
         Visible = true;
         _error.Text = "";
         _selected = 0;
-        _lengthSlider.GrabFocus();
+        _length.GrabFocus();
         RefreshSelection();
         PositionCard();
     }
 
     public void ShowError(string error) => _error.Text = error;
 
-    public void Begin()
-    {
-        foreach (var field in _fields) field.Apply();
-        BeginRequested?.Invoke(Values);
-    }
+    public void Begin() => BeginRequested?.Invoke(Values);
 
     public void HandleController(JoyButton button)
     {
@@ -92,79 +90,78 @@ public partial class DeliveryPanel : Control
             _fields[_selected].Value += direction * step * (_selected == 0 ? -1 : 1);
         }
         else return;
-        if (_selected == 0) _lengthSlider.GrabFocus();
-        else
-        {
-            _fields[_selected].GetLineEdit().GrabFocus();
-            _fields[_selected].GetLineEdit().SelectAll();
-        }
+        _fields[_selected].GrabFocus();
         RefreshSelection();
     }
 
-    private SpinBox Field(VBoxContainer parent, string index, string title, string hint,
-        string unit, double min, double max, double step, double value, Control? detail = null)
+    private static HSlider Slider(string name, double min, double max, double step, double value)
+    {
+        var slider = new HSlider
+        {
+            Name = name, MinValue = min, MaxValue = max, Step = step, Value = value,
+            CustomMinimumSize = new(0, 32), FocusMode = FocusModeEnum.All,
+            MouseDefaultCursorShape = CursorShape.PointingHand
+        };
+        slider.AddThemeStyleboxOverride("slider", VisualTheme.Box(VisualTheme.Border, VisualTheme.Border, 3, 3));
+        slider.AddThemeStyleboxOverride("grabber_area", VisualTheme.Box(VisualTheme.Ink, VisualTheme.Ink, 3, 3));
+        slider.AddThemeStyleboxOverride("grabber_area_highlight", VisualTheme.Box(VisualTheme.Ink, VisualTheme.Ink, 3, 3));
+        return slider;
+    }
+
+    private void Field(VBoxContainer parent, string title, string hint, Godot.Range slider,
+        string? format = null, string unit = "")
     {
         var frame = new PanelContainer();
-        frame.AddThemeStyleboxOverride("panel", VisualTheme.Box(Colors.Transparent,
-            detail != null ? VisualTheme.Border : Colors.Transparent, 6, detail != null ? 12 : 8));
+        frame.AddThemeStyleboxOverride("panel", _rowNormal);
         _rows.Add(frame);
         parent.AddChild(frame);
         var content = new VBoxContainer();
-        content.AddThemeConstantOverride("separation", 12);
+        content.AddThemeConstantOverride("separation", 6);
         frame.AddChild(content);
-        var row = new HBoxContainer { CustomMinimumSize = new Vector2(0, 64) };
+        var row = new HBoxContainer { CustomMinimumSize = new Vector2(0, 48) };
         row.AddThemeConstantOverride("separation", 16);
         content.AddChild(row);
-        var number = VisualTheme.Label(index, 14, VisualTheme.Muted);
-        number.CustomMinimumSize = new Vector2(24, 0);
-        row.AddChild(number);
         var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
         row.AddChild(text);
         text.AddChild(VisualTheme.Label(title, 19));
         text.AddChild(VisualTheme.Label(hint, 13, VisualTheme.Muted));
-        var spin = new SpinBox
+        if (format != null)
         {
-            MinValue = min, MaxValue = max, Step = step, Value = value, Suffix = unit,
-            CustomMinimumSize = new Vector2(156, 48), SizeFlagsVertical = SizeFlags.ShrinkCenter,
-            UpdateOnTextChanged = false
-        };
-        spin.GetLineEdit().AddThemeFontSizeOverride("font_size", 20);
-        spin.GetLineEdit().Alignment = HorizontalAlignment.Center;
+            string Display(double value) => $"{value.ToString(format)} {unit}";
+            var value = VisualTheme.Label(Display(slider.Value), 20);
+            value.Name = slider.Name + "Value";
+            value.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+            row.AddChild(value);
+            slider.ValueChanged += number => value.Text = Display(number);
+        }
+        content.AddChild(slider);
+        if (format != null)
+        {
+            var limits = new HBoxContainer();
+            var min = VisualTheme.Label($"{slider.MinValue.ToString(format)} {unit}", 12, VisualTheme.Muted);
+            min.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            limits.AddChild(min);
+            limits.AddChild(VisualTheme.Label($"{slider.MaxValue.ToString(format)} {unit}", 12, VisualTheme.Muted));
+            content.AddChild(limits);
+        }
         int fieldIndex = _fields.Count;
-        _fields.Add(spin);
-        spin.GetLineEdit().FocusEntered += () => { _selected = fieldIndex; RefreshSelection(); };
-        spin.ValueChanged += _ =>
+        _fields.Add(slider);
+        slider.FocusEntered += () => { _selected = fieldIndex; RefreshSelection(); };
+        slider.ValueChanged += _ =>
         {
             if (_error == null) return; // Fields are still being constructed.
             _error.Text = "";
             SettingsChanged?.Invoke(Values);
         };
-        row.AddChild(spin);
-        if (detail != null) content.AddChild(detail);
-        return spin;
     }
 
     private void PositionCard() => _card.Position = (Size - _card.Size) / 2;
 
-    private void PreviewTypedLength(string text)
-    {
-        // Keep incomplete edits such as "2" or "20." intact. Native live clamping would
-        // replace the first digit of "25" with the 8 m minimum before the user finishes.
-        string number = text.Trim().TrimEnd('m').Trim();
-        if (!(double.TryParse(number, NumberStyles.Float, CultureInfo.CurrentCulture, out double value) ||
-            double.TryParse(number, NumberStyles.Float, CultureInfo.InvariantCulture, out value)) ||
-            !double.IsFinite(value) || value < _length.MinValue || value > _length.MaxValue) return;
-        LineEdit edit = _length.GetLineEdit();
-        int caret = edit.CaretColumn;
-        _length.Value = value;
-        edit.Text = text;
-        edit.CaretColumn = caret;
-    }
-
     private void RefreshSelection()
     {
         for (int i = 0; i < _rows.Count; i++)
-            _rows[i].AddThemeStyleboxOverride("panel", VisualTheme.Box(Colors.Transparent,
-                i == _selected ? VisualTheme.Ink : i == 0 ? VisualTheme.Border : Colors.Transparent, 6, i == 0 ? 12 : 8));
+            _rows[i].AddThemeStyleboxOverride("panel", i == _selected ? _rowSelected : _rowNormal);
     }
+
+    public override void _ExitTree() { _rowNormal.Dispose(); _rowSelected.Dispose(); }
 }

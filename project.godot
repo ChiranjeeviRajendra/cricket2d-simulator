@@ -6,6 +6,7 @@ config/name="Cricket 2D | The Practice Ground"
 run/main_scene="res://Scenes/Main.tscn"
 config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 config/icon="res://Assets/icon.svg"
+run/max_fps=120
 
 [display]
 window/size/viewport_width=1440
@@ -13,6 +14,7 @@ window/size/viewport_height=900
 window/size/window_width_override=1440
 window/size/window_height_override=900
 window/stretch/mode="canvas_items"
+window/vsync/vsync_mode=1
 
 [dotnet]
 project/assembly_name="Cricket2D"

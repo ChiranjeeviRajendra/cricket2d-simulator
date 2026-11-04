@@ -1,14 +1,17 @@
 namespace Cricket.Physics;
 
 public enum DeliveryPhase { Setup, Windup, Live }
-public enum ContactKind { Pitch, Bat, Wicket }
-public readonly record struct ContactEvent(ContactKind Kind, Vec2 Position, double SpeedBefore, double SpeedAfter);
+public enum ContactKind { Pitch, Bat, Wicket, Boundary, Barricade, Terrace }
+/// <summary>Impact measurements for presentation; blade fraction runs from the handle end of the blade to its toe.</summary>
+public readonly record struct ContactEvent(ContactKind Kind, Vec2 Position, double SpeedBefore, double SpeedAfter,
+    double ImpactSpeed = 0, double? BatBladeFraction = null, double? BatFaceAlignment = null);
 
 /// <summary>Single owner of time/state. One Tick call always advances exactly 1/120 s.</summary>
 public sealed class Simulation
 {
     public SimulationSettings Settings { get; }
     public BattingSettings Batting { get; }
+    public FieldGeometry Field { get; }
     public BattingRig Batter { get; private set; }
     public DeliveryPhase Phase { get; private set; } = DeliveryPhase.Setup;
     public DeliveryPlan? Plan { get; private set; }
@@ -29,10 +32,11 @@ public sealed class Simulation
     public string Outcome => WicketHit ? "BOWLED" : BatHit ? "BAT CONTACT" :
         Phase == DeliveryPhase.Live && Ball.Position.X > PitchDimensions.WicketSeparation + 0.2 ? "THROUGH TO KEEPER" : "BALL IN PLAY";
 
-    public Simulation(SimulationSettings settings, BattingSettings? batting = null)
+    public Simulation(SimulationSettings settings, BattingSettings? batting = null, FieldSettings? field = null)
     {
         settings.Validate();
         Settings = settings;
+        Field = new(field ?? new(), settings);
         Batting = batting ?? new();
         Batter = new(settings, Batting);
         PreviousPose = Batter.Pose;
@@ -103,22 +107,54 @@ public sealed class Simulation
 
     private void AdvanceBall(double dt, BatPose batFrom, BatPose batTo)
     {
-        // Far beyond the fixed view, continue free flight and ground bounces.
+        // Ground, bat, wickets and field obstacles compete for the earliest swept contact.
         double elapsed = 0;
         for (int iteration = 0; iteration < 6 && elapsed < dt - 1e-10; iteration++)
         {
             double remaining = dt - elapsed;
             bool rolling = Ball.Position.Y <= Settings.BallRadius + 1e-5 && Math.Abs(Ball.Velocity.Y) < 0.08;
-            BallState next = rolling ? Roll(Ball, remaining) : BallFlight.Integrate(Ball, remaining, Settings);
+            bool supported = Field.TrySupport(Ball, Settings.BallRadius, out var support);
+            if (supported) rolling = false;
+            BallState Travel(double time) => supported ? Contacts.SurfaceMotion(Ball, support, time, Settings) :
+                rolling ? Roll(Ball, time) : BallFlight.Integrate(Ball, time, Settings);
+            BallState next = Travel(remaining);
             double earliest = remaining;
             ContactKind? kind = null;
             Vec2 normal = new(0, 1);
             Capsule collider = default;
+            FieldSurface fieldSurface = default;
             BatPose startBat = BatPose.Lerp(batFrom, batTo, elapsed / dt);
-            if (!rolling && next.Position.Y <= Settings.BallRadius && Ball.Velocity.Y < 0)
+            if (!rolling && next.Position.Y <= Settings.BallRadius && (Ball.Velocity.Y < 0 || next.Velocity.Y < 0))
             {
-                earliest = BallFlight.GroundTime(Ball, remaining, Settings);
+                if (supported)
+                {
+                    double lo = 0, hi = remaining;
+                    for (int i = 0; i < 26; i++)
+                    {
+                        double mid = (lo + hi) / 2;
+                        if (Travel(mid).Position.Y > Settings.BallRadius) lo = mid; else hi = mid;
+                    }
+                    earliest = hi;
+                }
+                else earliest = BallFlight.GroundTime(Ball, remaining, Settings);
                 kind = ContactKind.Pitch;
+            }
+            double sweepMinX = Math.Min(Ball.Position.X, next.Position.X) - Settings.BallRadius;
+            double sweepMaxX = Math.Max(Ball.Position.X, next.Position.X) + Settings.BallRadius;
+            double sweepMinY = Math.Min(Ball.Position.Y, next.Position.Y) - Settings.BallRadius;
+            double sweepMaxY = Math.Max(Ball.Position.Y, next.Position.Y) + Settings.BallRadius;
+            int surfaceCount = sweepMaxX < Field.LeftX && sweepMinX > Field.RightX ? 0 : Field.Surfaces.Count;
+            for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
+            {
+                var surface = Field.Surfaces[surfaceIndex];
+                // Reject distant terraces before the iterative swept-capsule test.
+                if (Math.Max(surface.Edge.A.X, surface.Edge.B.X) < sweepMinX ||
+                    Math.Min(surface.Edge.A.X, surface.Edge.B.X) > sweepMaxX ||
+                    Math.Max(surface.Edge.A.Y, surface.Edge.B.Y) < sweepMinY ||
+                    Math.Min(surface.Edge.A.Y, surface.Edge.B.Y) > sweepMaxY) continue;
+                // Supports are integrated along their plane, so do not collide with themselves.
+                if (supported && surface == support) continue;
+                if (Consider(surface.Edge, null, surface.Kind)) fieldSurface = surface;
             }
             if (Ball.Position.X > 16.5 && Ball.Position.X < 22)
             {
@@ -129,9 +165,11 @@ public sealed class Simulation
                 // helmet never obstruct the ball. Bat and wicket contacts stay active.
             }
             if (kind == null) { Ball = next; break; }
-            Ball = rolling ? Roll(Ball, earliest) : BallFlight.Integrate(Ball, earliest, Settings);
+            Ball = Travel(earliest);
             Statistics.Observe(Ball);
             double before = Ball.Velocity.Length;
+            double impactSpeed = Math.Max(0, -Vec2.Dot(Ball.Velocity, normal));
+            double? bladeFraction = null, faceAlignment = null;
             if (kind == ContactKind.Pitch)
             {
                 if (!BatHit && FirstBounceX == null) FirstBounceX = Ball.Position.X;
@@ -141,14 +179,25 @@ public sealed class Simulation
             else if (kind == ContactKind.Bat)
             {
                 BatPose impactPose = BatPose.Lerp(batFrom, batTo, (elapsed + earliest) / dt);
-                Vec2 contact = impactPose.Blade(Settings).Closest(Ball.Position);
+                Capsule blade = impactPose.Blade(Settings);
+                Vec2 contact = blade.Closest(Ball.Position);
                 Vec2 lever = contact - impactPose.Grip;
                 Vec2 batVelocity = (batTo.Grip - batFrom.Grip) / dt +
                     (batTo.Angle - batFrom.Angle) / dt * lever.Perpendicular;
+                bladeFraction = Math.Clamp(Vec2.Dot(contact - blade.A, blade.B - blade.A) /
+                    (blade.B - blade.A).LengthSquared, 0, 1);
+                faceAlignment = Math.Clamp(Math.Abs(Vec2.Dot(normal, impactPose.Direction.Perpendicular)), 0, 1);
+                impactSpeed = Math.Max(0, -Vec2.Dot(Ball.Velocity - batVelocity, normal));
                 Vec2 leverFromCentreOfMass = lever - impactPose.Direction * Settings.BatCentreOfMassFromGrip;
                 Ball = Contacts.BatImpulse(Ball, normal, batVelocity, leverFromCentreOfMass, Settings, out double impulse);
                 Ball = Ball with { Position = contact + normal * (Settings.BatHalfThickness + Settings.BallRadius + 1e-5) };
                 if (impulse > 0) { BatHit = true; HitExitSpeed = Ball.Velocity.Length; }
+                else impactSpeed = 0;
+            }
+            else if (kind is ContactKind.Boundary or ContactKind.Barricade or ContactKind.Terrace)
+            {
+                Ball = Contacts.SurfaceImpulse(Ball, normal, fieldSurface.Restitution, fieldSurface.Friction, Settings);
+                Ball = Ball with { Position = collider.Closest(Ball.Position) + normal * (Settings.BallRadius + 1e-5) };
             }
             else
             {
@@ -161,15 +210,15 @@ public sealed class Simulation
                 };
                 WicketHit = true;
             }
-            Events.Add(new(kind.Value, Ball.Position, before, Ball.Velocity.Length));
+            Events.Add(new(kind.Value, Ball.Position, before, Ball.Velocity.Length, impactSpeed, bladeFraction, faceAlignment));
             Statistics.Observe(Ball);
             elapsed += Math.Max(earliest, 1e-8);
 
-            void Consider(Capsule from, Capsule? to, ContactKind candidateKind)
+            bool Consider(Capsule from, Capsule? to, ContactKind candidateKind)
             {
-                if (!Contacts.Sweep(Ball.Position, next.Position, Settings.BallRadius, from, to ?? from, out double fraction, out Vec2 n)) return;
+                if (!Contacts.Sweep(Ball.Position, next.Position, Settings.BallRadius, from, to ?? from, out double fraction, out Vec2 n)) return false;
                 double time = remaining * fraction;
-                if (time > earliest) return;
+                if (time > earliest) return false;
                 Vec2 surfaceVelocity = Vec2.Zero;
                 if (candidateKind == ContactKind.Bat)
                 {
@@ -177,11 +226,12 @@ public sealed class Simulation
                     Vec2 lever = pose.Blade(Settings).Closest(Vec2.Lerp(Ball.Position, next.Position, fraction)) - pose.Grip;
                     surfaceVelocity = (batTo.Grip - batFrom.Grip) / dt + (batTo.Angle - batFrom.Angle) / dt * lever.Perpendicular;
                 }
-                if (Vec2.Dot(Ball.Velocity - surfaceVelocity, n) >= -1e-6) return;
+                if (Vec2.Dot(Ball.Velocity - surfaceVelocity, n) >= -1e-6) return false;
                 earliest = time;
                 kind = candidateKind;
                 normal = n;
                 collider = Capsule.Lerp(from, to ?? from, fraction);
+                return true;
             }
         }
         if (Ball.Position.Y < Settings.BallRadius)

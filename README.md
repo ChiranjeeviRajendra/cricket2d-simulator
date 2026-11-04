@@ -16,6 +16,8 @@ If Godot has moved:
 
 You can also set `GODOT4` to the Godot executable. `Play.cmd` uses a process-local PowerShell execution-policy override; it does not change the machine's execution policy. The launcher does not install applications or require administrator access. The initial build needs a .NET 10 SDK, selected by `global.json`. Dependency packages and build outputs stay in this repository's ignored directories. Godot uses its ordinary Windows user-profile cache directories.
 
+Rendering is capped at **120 FPS while focused** and **30 FPS while unfocused**, with VSync enabled. Use `.\tools\Run.ps1 -FourK` for fullscreen 4K, or `-PerformanceTest` for an automated rendered benchmark. The [performance audit](docs/PERFORMANCE.md) records the measured improvements, hardware, regression checks and limitations.
+
 ## Delivery setup
 
 The game opens on the **Main Menu** with **Play Match** (disabled), **Practice**, **Settings** (disabled) and **Exit**. Select **Practice → Batting** to enter the existing batting gameplay; **Bowling** is disabled. Menus support mouse clicks, the left stick, arrow keys/D-pad, Enter/A to select, and Escape/B to go back from Practice. Selected items use a charcoal fill and soft ivory text; the remaining UI uses soft ivory panels and warm grey text.
@@ -28,7 +30,7 @@ Batting starts on the idle field. Press **A / Enter** to open **Batting Practice
 | Pitching length | First ground contact, measured **from the bowler-end wicket** toward the striker | 8–25 m |
 | Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.16 m (153–216 cm) |
 
-Pitch length and its slider share one frame at the top. Drag the slider or edit the number; they update each other live. The entire diagram uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the slider farther from the bowler; right moves it closer. D-pad up/down selects pitch length, speed and height in that order.
+Pitch length, release speed and release height each have a slider in their own unnumbered box, with live values instead of text inputs. The pitch diagram stays at the top and uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Drag with the mouse or adjust with left/right arrows or the D-pad. Up/down and Tab cycle through the three settings.
 
 With the panel open, press **A / Enter** to begin. The automated bowler winds up for 1.25 s, then releases the ball. You can move the bat during the windup. There is **no timed reset**: the ball continues naturally until you press **A / Enter** for the next delivery settings. Opening settings and beginning a delivery require separate presses. Opening settings retains the previous delivery's maxima; beginning a delivery clears them. **B / Escape** returns to the main menu from either settings or play. Leaving the window pauses the simulation.
 
@@ -38,13 +40,17 @@ The release is at x = 1.2192 m, on the bowler's popping crease. The length setti
 
 The batter is always visible and permanently invulnerable to the ball. The ball passes through his body, pads and helmet without a collision response. **The bat and wickets remain collidable.**
 
+Bat contacts now use the supplied **perfect-shot** or **imperfect-shot** recording based on contact position and face alignment; wicket hits use the supplied **wicket** sound. Quieter impacts play more softly. Add sample variations and tune selection/volume in `Config/audio.json`; see [AUDIO.md](docs/AUDIO.md) for extending the sound library.
+
 ## Stats, camera and boundaries
 
 The camera automatically zooms out to keep the ball and both wickets visible. When the ball moves beyond the left side, the wickets remain toward the right edge; when it moves beyond the right side, they remain toward the left edge. High shots also expand the view vertically. The camera keeps the widest zoom for the rest of that delivery and returns to the initial view when settings reopen.
 
-The screen displays only four compact stats: **live ball speed**, **maximum ball speed**, **maximum length from the batter**, and **maximum height above ground**. Both speeds use **km/h**; distances use **metres**. Maxima are tracked from release through the entire delivery, including incoming flight, bat contact, bounce and rolling. Length is the greatest absolute horizontal distance from the batter's fixed normal stance, on either side; height uses the ball centre above ground. The maxima do not decrease when the ball slows, comes closer or falls. The bottom instructions, countdown, extra telemetry, ruler and live-height guide have been removed.
+The screen displays five compact stats: **live ball speed**, **maximum ball speed**, **maximum length from the batter**, **maximum height above ground**, and **FPS**. FPS shows Godot's measured rendering frame rate, independently of the fixed physics tick rate. Both speeds use **km/h**; distances use **metres**. Maxima are tracked from release through the entire delivery, including incoming flight, bat contact, bounce and rolling. Length is the greatest absolute horizontal distance from the batter's fixed normal stance, on either side; height uses the ball centre above ground. The maxima do not decrease when the ball slows, comes closer or falls. The bottom instructions, countdown, extra telemetry, ruler and live-height guide have been removed.
 
-The boundary signs mark **37 m to the left** and **75 m to the right** of the batter's normal stance. Both are fixed field markers: their posts and signs stay at their world positions and appear only when the camera includes them. There are no bottom striker/bowler labels or off-screen boundary labels. Delivery pitching length continues to be measured from the bowler-end wicket. Boundary signs do not add scoring or stop the ball.
+The pitch is surrounded by white triangular boundary cushions, **40 m left** and **75 m right** of the batter's normal stance. A **1.5 m-high** solid oval barricade sits **5 m clear beyond the wedge**. Outside it, **28 stepped seating tiers** rise to the **25 m outer wall**, with coloured seats, seated spectators, access staircases and handrails. Parking has been removed. The wedge, walls and terrace treads/risers collide with the ball; walls and terraces share the pitch's rebound settings by default. High shots can clear the stadium. Delivery pitching length still starts at the bowler-end wicket.
+
+Edit [`Config/field.json`](Config/field.json) and restart to change boundary distances, wedge dimensions/material response, wall heights, seating width, row count, aisles, seat spacing or crowd density. The outer wall follows the back of the seating automatically. [`docs/STADIUM.md`](docs/STADIUM.md) explains the shared geometry, 2D collision plane and editable Inkscape sky/crowd artwork. [`docs/BOUNDARY_REFERENCES.md`](docs/BOUNDARY_REFERENCES.md) records the research and distinguishes measured dimensions from tunable impact assumptions.
 
 ## Controls
 
@@ -52,8 +58,8 @@ The boundary signs mark **37 m to the left** and **75 m to the right** of the ba
 | --- | --- | --- |
 | Aim the full shoulder swing | Left stick, rotate through 360 degrees | WASD (diagonals supported) |
 | Aim the blade about the fist | Right stick, constrained by current swing angle | Arrow keys (diagonals supported) |
-| Select setup field | D-pad up / down | Tab / Shift+Tab or click |
-| Change setup value | D-pad left / right | Type a number or use the spinner |
+| Select setup field | D-pad up / down | Up / down, Tab / Shift+Tab, or click |
+| Change setup value | D-pad left / right | Left / right arrows or drag the slider |
 | Begin from settings | A / south button | Enter |
 | Open / return to settings | A / south button | Enter |
 | Toggle trajectory | — | T |
@@ -75,7 +81,7 @@ Controller bindings use Godot's standard gamepad mappings with separately config
 - Swept ball-versus-moving-capsule contact detection for the bat. Impulses depend on the bat contact-point velocity, finite effective mass, rotational lever arm and friction.
 - Bat and wicket contacts; an always-visible, invulnerable batter; a trajectory trail and persistent per-delivery speed, distance and height maxima.
 - Fixed-length arms and legs, straight arms through the hitting arc, a full shoulder circle with phase-specific speed limits, independent wrist rotation, two-link IK, an automatic front-foot step, planted rear-toe pivot, head compensation and configurable weight transfer.
-- Procedural vector presentation with automatic camera framing, boundary signs and four compact stats. Pitch, characters and wickets share the same changing scale. A minimum drawn ball radius and subtle halo keep distant balls visible without changing collision size.
+- Procedural field presentation with a configurable oval wedge, inner and outer barricades, stepped stadium seating, a static spectator crowd and an Inkscape daylight sky. Physical objects retain a shared metre scale; scenery depth uses perspective that matches the ball plane at each boundary crossing. Five compact stats and a minimum drawn ball radius keep gameplay readable during camera zoom.
 
 Tune the batsman in [`Config/batsman.json`](Config/batsman.json): separate `Input`, `Swing`, `Wrist`, `Arms`, `Stance`, `BodyMotion`, `Footwork` and `HeadMotion` objects control stick response, speed phases, the snap, angle limits and body movement. Edit the JSON and restart the game, or reload it in the batting preview; no code rebuild is needed. [`docs/BATTING.md`](docs/BATTING.md) explains the angle convention, every object and examples. Defaults approximate a cricket swing and remain adjustable for play feel.
 
@@ -133,7 +139,7 @@ Run the actual Godot scene through A-button setup, bowling, bounce, continued pl
 .\tools\Run.ps1 -Headless -SmokeTest
 ```
 
-Tests return a nonzero exit code on failure. They cover analytic vacuum flight, drag, 1,000 random bounce-energy checks, rolling friction, bat impulses, fast swept contacts, 48 launch combinations, invalid/unreachable deliveries, landing accuracy, continued play without a timed reset, retained/reset maxima, km/h conversion, playable swing sequences, bone lengths and determinism at different render rates. Camera checks cover both travel directions, direction changes, high shots, reset, and fixed boundary/height measurements. The Godot smoke test verifies A/Enter and B/Escape parity, mouse/keyboard/stick navigation, disabled choices, scaled slider dragging, live numeric editing, separate opening/beginning presses, speed entry in km/h, both stick circles, screen directions, and independent wrist rotation using the loaded batsman configuration.
+Tests return a nonzero exit code on failure. They cover analytic vacuum flight, drag, 1,000 random bounce-energy checks, rolling friction, bat impulses, fast swept contacts, 48 launch combinations, invalid/unreachable deliveries, landing accuracy, continued play without a timed reset, retained/reset maxima, km/h conversion, playable swing sequences, bone lengths and determinism at different render rates. Camera checks cover both travel directions, direction changes, high shots, reset, and fixed boundary/height measurements. The Godot smoke test verifies A/Enter and B/Escape parity, mouse/keyboard/stick navigation, disabled choices, all three sliders' dragging/bounds/live values, focus cycling, separate opening/beginning presses, speed conversion from km/h, both stick circles, screen directions, and independent wrist rotation using the loaded batsman configuration.
 
 ## Current scope
 

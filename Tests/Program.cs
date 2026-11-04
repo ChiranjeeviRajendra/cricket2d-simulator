@@ -40,11 +40,22 @@ var tests = new (string Name, Action Run)[]
     ("Preview playback agrees at 30/60/144 FPS, pauses, steps, loops and recovers", AnimationChecks.Playback),
     ("Preview reload is atomic and validates the combined movement envelope", AnimationChecks.Reload),
     ("Pitch slider preserves stump spacing and the 25 m extension", PitchLengthScaling),
+    ("Preview solver cancels stale work and publishes only the latest slider values", PerformanceChecks.PreviewWorker),
+    ("Steady physics avoids per-tick heap allocation and bounds the trail", PerformanceChecks.SteadySimulationAllocations),
+    ("Impact sounds classify bat contact, suppress chatter and rotate configured variants", AudioChecks.Selection),
+    ("Audio configuration rejects invalid rules, volumes and sample paths", AudioChecks.Configuration),
+    ("Live collision events expose bounded contact measurements for audio", AudioChecks.LiveContacts),
     ("Render rates of 30, 60 and 144 Hz yield identical simulation", RenderRates),
     ("Camera fits the ball and both wickets in either direction", CameraFraming),
     ("Camera retains zoom during flight and resets for the next ball", CameraReset),
     ("High shots fit vertically without losing either wicket", HighShotFraming),
-    ("Boundary distances and live height are independent of camera zoom", FieldMeasurements)
+    ("Boundary distances and live height are independent of camera zoom", FieldMeasurements),
+    ("Configurable oval geometry shares physical crossings and a constant barricade gap", FieldChecks.Layout),
+    ("Oblique field impacts dissipate energy, transfer spin and cannot tunnel", FieldChecks.Impacts),
+    ("Live balls hit wedges and barricades, clear their tops and settle", FieldChecks.LiveContacts),
+    ("Outer barricade matches inner-wall response and cannot tunnel", FieldChecks.OuterBarricadeContacts),
+    ("Stepped seating matches both walls, keeps aisles clear and collides with lofted shots", FieldChecks.Seating),
+    ("Slope support obeys gravity and field impacts are render-rate independent", FieldChecks.SupportedMotion)
 };
 int failures = 0;
 foreach (var test in tests)
@@ -483,16 +494,17 @@ static void HighShotFraming()
 
 static void FieldMeasurements()
 {
-    Near(37, FieldLayout.LeftBoundaryX - FieldLayout.BatterReferenceX, 1e-10, "left boundary distance");
-    Near(75, FieldLayout.BatterReferenceX - FieldLayout.RightBoundaryX, 1e-10, "right boundary distance");
+    var field = new FieldGeometry(new(), new());
+    Near(40, field.LeftX - FieldLayout.BatterReferenceX, 1e-10, "left boundary distance");
+    Near(75, FieldLayout.BatterReferenceX - field.RightX, 1e-10, "right boundary distance");
     var camera = new FieldCamera();
     foreach (Vec2 ball in new[] { new Vec2(15, .036), new Vec2(80, 12.34), new Vec2(-120, 50) })
     {
         camera.Fit(ball);
         Near(ball.Y, FieldLayout.BallHeight(ball), 0, "height above ground");
-        Check(camera.Project(new(FieldLayout.LeftBoundaryX, 0)).X < camera.Project(new(FieldLayout.BatterReferenceX, 0)).X,
+        Check(camera.Project(new(field.LeftX, 0)).X < camera.Project(new(FieldLayout.BatterReferenceX, 0)).X,
             "Left boundary is on the wrong side.");
-        Check(camera.Project(new(FieldLayout.RightBoundaryX, 0)).X > camera.Project(new(FieldLayout.BatterReferenceX, 0)).X,
+        Check(camera.Project(new(field.RightX, 0)).X > camera.Project(new(FieldLayout.BatterReferenceX, 0)).X,
             "Right boundary is on the wrong side.");
     }
 }

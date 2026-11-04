@@ -23,20 +23,21 @@ public sealed record DeliveryPlan(DeliverySettings Settings, BallState Release, 
 public static class DeliverySolver
 {
     /// <summary>Finds the lower, bowling-like arc using the same drag model as the live ball.</summary>
-    public static bool TrySolve(DeliverySettings request, SimulationSettings s, out DeliveryPlan? plan, out string error)
+    public static bool TrySolve(DeliverySettings request, SimulationSettings s, out DeliveryPlan? plan, out string error,
+        CancellationToken cancellation = default)
     {
         plan = null;
         error = request.ValidationError ?? "";
         if (error.Length != 0) return false;
         double lowAngle = -85 * Math.PI / 180;
-        double lowRange = FirstPitch(request, lowAngle, s).X;
+        double lowRange = FirstPitch(request, lowAngle, s, cancellation).X;
         double highAngle = lowAngle;
         bool bracketed = false;
         // Scan upwards: the first root is always the low trajectory, never the lob branch.
         for (int degrees = -84; degrees <= 65; degrees++)
         {
             highAngle = degrees * Math.PI / 180;
-            double range = FirstPitch(request, highAngle, s).X;
+            double range = FirstPitch(request, highAngle, s, cancellation).X;
             if (lowRange <= request.PitchingLength && range >= request.PitchingLength)
             { bracketed = true; break; }
             lowAngle = highAngle;
@@ -50,12 +51,12 @@ public static class DeliverySolver
         for (int i = 0; i < 32; i++)
         {
             double middle = (lowAngle + highAngle) / 2;
-            if (FirstPitch(request, middle, s).X < request.PitchingLength) lowAngle = middle;
+            if (FirstPitch(request, middle, s, cancellation).X < request.PitchingLength) lowAngle = middle;
             else highAngle = middle;
         }
         double angle = (lowAngle + highAngle) / 2;
         var preview = new List<Vec2>();
-        var landing = FirstPitch(request, angle, s, preview);
+        var landing = FirstPitch(request, angle, s, cancellation, preview);
         plan = new(request, Release(request, angle), angle, landing.Time, landing.X, preview);
         return true;
     }
@@ -64,13 +65,14 @@ public static class DeliverySolver
         new(new(PitchDimensions.ReleaseX, d.ReleaseHeight), Vec2.FromAngle(angle) * d.Speed);
 
     private static (double X, double Time) FirstPitch(DeliverySettings d, double angle,
-        SimulationSettings s, List<Vec2>? preview = null)
+        SimulationSettings s, CancellationToken cancellation, List<Vec2>? preview = null)
     {
         BallState ball = Release(d, angle);
         double dt = SimulationSettings.Tick / s.Substeps;
         preview?.Add(ball.Position);
         for (int i = 0; i < 20000; i++)
         {
+            if ((i & 63) == 0) cancellation.ThrowIfCancellationRequested();
             BallState next = BallFlight.Integrate(ball, dt, s);
             if (next.Position.Y <= s.BallRadius)
             {
