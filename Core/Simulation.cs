@@ -1,7 +1,7 @@
 namespace Cricket.Physics;
 
 public enum DeliveryPhase { Setup, Windup, Live }
-public enum ContactKind { Pitch, Bat, Wicket, Boundary, Barricade }
+public enum ContactKind { Pitch, Bat, Wicket, Boundary, Barricade, Terrace }
 /// <summary>Impact measurements for presentation; blade fraction runs from the handle end of the blade to its toe.</summary>
 public readonly record struct ContactEvent(ContactKind Kind, Vec2 Position, double SpeedBefore, double SpeedAfter,
     double ImpactSpeed = 0, double? BatBladeFraction = null, double? BatFaceAlignment = null);
@@ -139,9 +139,19 @@ public sealed class Simulation
                 else earliest = BallFlight.GroundTime(Ball, remaining, Settings);
                 kind = ContactKind.Pitch;
             }
-            for (int surfaceIndex = 0; surfaceIndex < Field.Surfaces.Count; surfaceIndex++)
+            double sweepMinX = Math.Min(Ball.Position.X, next.Position.X) - Settings.BallRadius;
+            double sweepMaxX = Math.Max(Ball.Position.X, next.Position.X) + Settings.BallRadius;
+            double sweepMinY = Math.Min(Ball.Position.Y, next.Position.Y) - Settings.BallRadius;
+            double sweepMaxY = Math.Max(Ball.Position.Y, next.Position.Y) + Settings.BallRadius;
+            int surfaceCount = sweepMaxX < Field.LeftX && sweepMinX > Field.RightX ? 0 : Field.Surfaces.Count;
+            for (int surfaceIndex = 0; surfaceIndex < surfaceCount; surfaceIndex++)
             {
                 var surface = Field.Surfaces[surfaceIndex];
+                // Reject distant terraces before the iterative swept-capsule test.
+                if (Math.Max(surface.Edge.A.X, surface.Edge.B.X) < sweepMinX ||
+                    Math.Min(surface.Edge.A.X, surface.Edge.B.X) > sweepMaxX ||
+                    Math.Max(surface.Edge.A.Y, surface.Edge.B.Y) < sweepMinY ||
+                    Math.Min(surface.Edge.A.Y, surface.Edge.B.Y) > sweepMaxY) continue;
                 // Supports are integrated along their plane, so do not collide with themselves.
                 if (supported && surface == support) continue;
                 if (Consider(surface.Edge, null, surface.Kind)) fieldSurface = surface;
@@ -184,7 +194,7 @@ public sealed class Simulation
                 if (impulse > 0) { BatHit = true; HitExitSpeed = Ball.Velocity.Length; }
                 else impactSpeed = 0;
             }
-            else if (kind is ContactKind.Boundary or ContactKind.Barricade)
+            else if (kind is ContactKind.Boundary or ContactKind.Barricade or ContactKind.Terrace)
             {
                 Ball = Contacts.SurfaceImpulse(Ball, normal, fieldSurface.Restitution, fieldSurface.Friction, Settings);
                 Ball = Ball with { Position = collider.Closest(Ball.Position) + normal * (Settings.BallRadius + 1e-5) };

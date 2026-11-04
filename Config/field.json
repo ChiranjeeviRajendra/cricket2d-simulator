@@ -15,9 +15,14 @@
     "Restitution": null,
     "Friction": null
   },
-  "Parking": {
-    "VergeMetres": 1.5,
-    "WidthMetres": 20
+  "Seating": {
+    "WidthMetres": 21.5,
+    "Rows": 28,
+    "Sections": 16,
+    "AisleWidthMetres": 1.8,
+    "SeatSpacingMetres": 0.62,
+    "Occupancy": 0.82,
+    "CrowdSeed": 4821
   },
   "OuterBarricade": {
     "HeightMetres": 25,

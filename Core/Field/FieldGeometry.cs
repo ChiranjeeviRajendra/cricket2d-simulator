@@ -3,7 +3,7 @@ namespace Cricket.Physics;
 public readonly record struct FieldSurface(Capsule Edge, Vec2 Normal, ContactKind Kind,
     double Restitution, double Friction);
 
-/// <summary>Convex wedge/wall profiles in the ball's vertical plane. No display units.</summary>
+/// <summary>Wedge, wall and terrace profiles in the ball's vertical plane. No display units.</summary>
 public sealed class FieldGeometry
 {
     public FieldSettings Settings { get; }
@@ -12,15 +12,19 @@ public sealed class FieldGeometry
     public double CentreX => (LeftX + RightX) / 2;
     public double RadiusX => (LeftX - RightX) / 2;
     public double BarricadeOffset => Settings.Boundary.WidthMetres + Settings.Barricade.ClearGapMetres;
-    public double ParkingOffset => BarricadeOffset + Settings.Barricade.ThicknessMetres + Settings.Parking.VergeMetres;
-    public double OuterBarricadeOffset => ParkingOffset + Settings.Parking.WidthMetres;
+    public double SeatingOffset => BarricadeOffset + Settings.Barricade.ThicknessMetres;
+    public double RowDepth => Settings.Seating.WidthMetres / Settings.Seating.Rows;
+    public double OuterBarricadeOffset => SeatingOffset + Settings.Seating.WidthMetres;
+    public double RowOffset(int row) => SeatingOffset + row * RowDepth;
+    public double RowHeight(int row) => Settings.Barricade.HeightMetres +
+        (Settings.OuterBarricade.HeightMetres - Settings.Barricade.HeightMetres) * row / (Settings.Seating.Rows - 1);
     public IReadOnlyList<FieldSurface> Surfaces { get; }
 
     public FieldGeometry(FieldSettings settings, SimulationSettings physics)
     {
         settings.Validate();
         Settings = settings;
-        var surfaces = new List<FieldSurface>(16);
+        var surfaces = new List<FieldSurface>(16 + 4 * settings.Seating.Rows);
         foreach (int side in new[] { -1, 1 })
         {
             double x = side > 0 ? LeftX : RightX;
@@ -32,6 +36,14 @@ public sealed class FieldGeometry
             var wall = settings.Barricade;
             double e = wall.Restitution ?? physics.GroundRestitution, mu = wall.Friction ?? physics.GroundFriction;
             AddWall(BarricadeOffset, wall.HeightMetres, wall.ThicknessMetres, e, mu);
+            for (int row = 0; row < settings.Seating.Rows; row++)
+            {
+                double inner = x + side * RowOffset(row), outer = inner + side * RowDepth;
+                double height = RowHeight(row);
+                if (row > 0)
+                    Add(new(inner, RowHeight(row - 1)), new(inner, height), new(-side, 0), ContactKind.Terrace, e, mu);
+                Add(new(inner, height), new(outer, height), new(0, 1), ContactKind.Terrace, e, mu);
+            }
             var perimeter = settings.OuterBarricade;
             AddWall(OuterBarricadeOffset, perimeter.HeightMetres, perimeter.ThicknessMetres,
                 perimeter.Restitution ?? e, perimeter.Friction ?? mu);
@@ -59,6 +71,8 @@ public sealed class FieldGeometry
 
     public bool TrySupport(BallState ball, double radius, out FieldSurface surface)
     {
+        if (ball.Position.X > RightX + radius && ball.Position.X < LeftX - radius)
+        { surface = default; return false; }
         for (int i = 0; i < Surfaces.Count; i++)
         {
             var candidate = Surfaces[i];

@@ -23,8 +23,8 @@ internal static class FieldChecks
         {
             double a = i * Math.Tau / 180;
             Near(5, (g.OvalPoint(a, g.BarricadeOffset) - g.OvalPoint(a, settings.Boundary.WidthMetres)).Length, 1e-10, "Clear gap around oval");
-            Near(settings.Parking.WidthMetres, (g.OvalPoint(a, g.OuterBarricadeOffset) - g.OvalPoint(a, g.ParkingOffset)).Length,
-                1e-10, "Outer barricade follows parking's outer edge around the oval");
+            Near(settings.Seating.WidthMetres, (g.OvalPoint(a, g.OuterBarricadeOffset) - g.OvalPoint(a, g.SeatingOffset)).Length,
+                1e-10, "Outer barricade follows the back of the seating around the oval");
         }
         var custom = settings with { Boundary = settings.Boundary with { LeftDistanceMetres = 52, RightDistanceMetres = 91 } };
         var changed = new FieldGeometry(custom, new());
@@ -55,12 +55,15 @@ internal static class FieldChecks
         var tuned = settings with { Barricade = settings.Barricade with { Restitution = .42, Friction = .35 } };
         Check(new FieldGeometry(tuned, differentPitch).Surfaces.Where(s => s.Kind == ContactKind.Barricade)
             .All(s => s.Restitution == .42 && s.Friction == .35), "Outer barricade must inherit inner barricade overrides");
-        var widened = new FieldGeometry(settings with { Parking = settings.Parking with { WidthMetres = 32 } }, new());
-        Near(12, widened.OuterBarricadeOffset - g.OuterBarricadeOffset, 1e-12, "Edited parking width moves outer wall");
+        var widened = new FieldGeometry(settings with { Seating = settings.Seating with { WidthMetres = 33.5 } }, new());
+        Near(12, widened.OuterBarricadeOffset - g.OuterBarricadeOffset, 1e-12, "Edited seating width moves outer wall");
         foreach (string json in new[]{"null","{\"Boundary\":null}","{\"Boundary\":{\"LeftDistanceMetres\":0}}",
             "{\"Boundary\":{\"Restitution\":1.1}}","{\"Barricade\":{\"ClearGapMetres\":-5}}","{\"Boundary\":{\"LeftDistanceMeters\":40}}",
             "{\"OuterBarricade\":null}","{\"OuterBarricade\":{\"HeightMetres\":81}}",
-            "{\"OuterBarricade\":{\"ThicknessMetres\":0}}","{\"OuterBarricade\":{\"Friction\":-1}}"})
+            "{\"OuterBarricade\":{\"ThicknessMetres\":0}}","{\"OuterBarricade\":{\"Friction\":-1}}",
+            "{\"Seating\":null}","{\"Seating\":{\"Rows\":0}}","{\"Seating\":{\"Occupancy\":1.1}}",
+            "{\"Seating\":{\"Sections\":9}}",
+            "{\"Seating\":{\"WidthMetres\":12,\"Rows\":64}}","{\"OuterBarricade\":{\"HeightMetres\":1}}"})
         {
             bool rejected = false;
             try { FieldSettings.FromJson(json); } catch (ArgumentException) { rejected = true; } catch (System.Text.Json.JsonException) { rejected = true; }
@@ -96,7 +99,7 @@ internal static class FieldChecks
                 s.BallRadius, surface.Edge, surface.Edge, out _, out _)).ToArray();
             Check(hits.Any(h => h.Kind == ContactKind.Boundary), "A sweep tunneled through the thin wedge");
             double clearHeight = g.Settings.Barricade.HeightMetres + .8;
-            Check(!g.Surfaces.Any(surface => Contacts.Sweep(new(x - side * 2, clearHeight), new(x + side * 8, clearHeight), s.BallRadius,
+            Check(!g.Surfaces.Any(surface => Contacts.Sweep(new(x - side * 2, clearHeight), new(x + side * (g.SeatingOffset + .1), clearHeight), s.BallRadius,
                 surface.Edge, surface.Edge, out _, out _)), "A clear aerial ball hit an invisible boundary wall");
         }
     }
@@ -129,6 +132,12 @@ internal static class FieldChecks
         foreach (int side in new[] { -1, 1 })
         {
             double x = side > 0 ? g.LeftX : g.RightX, w = g.Settings.Boundary.WidthMetres, h = g.Settings.Boundary.HeightMetres;
+            double offset = (sim.Ball.Position.X - x) * side;
+            if (offset >= g.SeatingOffset && offset < g.OuterBarricadeOffset)
+            {
+                int row = Math.Min(g.Settings.Seating.Rows - 1, (int)((offset - g.SeatingOffset) / g.RowDepth));
+                Check(sim.Ball.Position.Y >= g.RowHeight(row) + sim.Settings.BallRadius - 1e-4, "Ball entered solid seating");
+            }
             Vec2[] triangle = [new(x, 0), new(x + side * w / 2, h), new(x + side * w, 0)];
             double inner = x + side * g.BarricadeOffset, outer = inner + side * g.Settings.Barricade.ThicknessMetres;
             Vec2[] rectangle = [new(inner,0),new(inner,g.Settings.Barricade.HeightMetres),
@@ -233,32 +242,83 @@ internal static class FieldChecks
             double height = geometry.Settings.OuterBarricade.HeightMetres;
 
             var lowWall = Start(new(new(inner - side * .5, .65), new(side * 15, 0), 120), physics);
-            var tallWall = Start(new(new(outer - side * .5, .65), new(side * 15, 0), 120), physics);
+            var tallWall = Start(new(new(outer + side * (thickness + .5), .65), new(-side * 15, 0), -120), physics);
             Run(lowWall, 12);
             var hits = Run(tallWall, 12);
             Check(hits.Any(e => e.Kind == ContactKind.Barricade), "Outer wall did not collide");
-            Near(lowWall.Ball.Velocity.X, tallWall.Ball.Velocity.X, 1e-7, "Both walls have the same normal rebound");
+            Near(-lowWall.Ball.Velocity.X, tallWall.Ball.Velocity.X, 1e-7, "Both walls have the same normal rebound");
             Near(lowWall.Ball.Velocity.Y, tallWall.Ball.Velocity.Y, 1e-7, "Both walls have the same friction response");
-            Near(lowWall.Ball.Spin, tallWall.Ball.Spin, 1e-7, "Both walls have the same spin transfer");
-
-            // A lofted ball clears the 1.5 m wall, crosses the parking, then returns from the outer wall.
-            var acrossParking = Start(new(new(inner - side * .5, 12), new(side * 80, 0)), physics);
-            hits = Run(acrossParking, 60);
-            Check(hits.Any(e => e.Kind == ContactKind.Barricade && Math.Abs(e.Position.X - outer) < .1), "Ball cleared inner wall but missed parking perimeter");
-            Check(acrossParking.Ball.Velocity.X * side < 0, "Outer wall failed to return ball toward pitch");
+            Near(-lowWall.Ball.Spin, tallWall.Ball.Spin, 1e-7, "Both walls have the same spin transfer");
 
             var outside = Start(new(new(outer + side * (thickness + .5), 10), new(-side * 35, 0)), physics);
             Check(Run(outside, 12).Any(e => e.Kind == ContactKind.Barricade) && outside.Ball.Velocity.X * side > 0,
                 "Outer face failed to return an incoming outside ball");
 
-            var fast = Start(new(new(outer - side * .8, 10), new(side * 180, 0)), physics with { Substeps = 1 });
-            Check(Run(fast, 1).Any(e => e.Kind == ContactKind.Barricade) && fast.Ball.Velocity.X * side < 0,
+            var fast = Start(new(new(outer + side * (thickness + .8), 10), new(-side * 180, 0)), physics with { Substeps = 1 });
+            Check(Run(fast, 1).Any(e => e.Kind == ContactKind.Barricade) && fast.Ball.Velocity.X * side > 0,
                 "Fast ball tunneled through outer barricade");
 
             var clear = Start(new(new(outer - side * .5, height + .7), new(side * 50, 0)), physics);
             Check(!Run(clear, 6).Any(e => e.Kind == ContactKind.Barricade), "Ball above outer wall hit invisible geometry");
             var top = Start(new(new(outer + side * thickness / 2, height + .35), new(0, -3)), physics);
             Check(Run(top, 15).Any(e => e.Kind == ContactKind.Barricade) && top.Ball.Velocity.Y > 0, "Outer barricade top failed to bounce ball");
+        }
+    }
+
+    public static void Seating()
+    {
+        var physics = new SimulationSettings { AirDensity = 0 };
+        var geometry = new FieldGeometry(new(), physics);
+        Near(26.98, geometry.OuterBarricadeOffset, 1e-10, "Seating preserves the existing outer perimeter");
+        Near(1.5, geometry.RowHeight(0), 1e-12, "Front row meets inner wall top");
+        Near(25, geometry.RowHeight(geometry.Settings.Seating.Rows - 1), 1e-12, "Back row meets outer wall top");
+        int total = 0, occupied = 0;
+        for (int row = 0; row < geometry.Settings.Seating.Rows; row++)
+        {
+            if (row > 0) Check(geometry.RowHeight(row) > geometry.RowHeight(row - 1), "Seating is not stepped upwards");
+            foreach (bool front in new[] { false, true })
+            {
+                var seats = StadiumSeating.CreateRow(geometry, row, front);
+                Check(seats.SequenceEqual(StadiumSeating.CreateRow(geometry, row, front)), "Crowd must be deterministic");
+                foreach (var seat in seats)
+                {
+                    total++; if (seat.Occupied) occupied++;
+                    Near(geometry.RowHeight(row), seat.Height, 0, "Seat is not on its terrace");
+                    Check(front == (seat.Ground.Y < 0), "Spectator on wrong side of field");
+                    Check(Vec2.Dot(seat.Facing, new Vec2(geometry.CentreX, 0) - seat.Ground) > 0, "Spectator faces away from pitch");
+                    for (int section = 0; section < geometry.Settings.Seating.Sections; section++)
+                    {
+                        double offset = geometry.RowOffset(row) + geometry.RowDepth * .55;
+                        Vec2 aisle = geometry.OvalPoint(StadiumSeating.AisleAngle(geometry, section), offset);
+                        Check((seat.Ground - aisle).Length > geometry.Settings.Seating.AisleWidthMetres / 2, "A seat obstructs the aisle");
+                    }
+                }
+            }
+        }
+        Check(total > 10000 && Math.Abs((double)occupied / total - .82) < .02, "Unexpected crowd density");
+        var empty = new FieldGeometry(new() { Seating = new() { Occupancy = 0 } }, physics);
+        Check(StadiumSeating.CreateRow(empty, 0, false).All(s => !s.Occupied), "Empty crowd setting ignored");
+        var full = new FieldGeometry(new() { Seating = new() { Occupancy = 1, CrowdSeed = 7 } }, physics);
+        Check(StadiumSeating.CreateRow(full, 0, false).All(s => s.Occupied), "Full crowd setting ignored");
+
+        foreach (int side in new[] { -1, 1 })
+        {
+            double x = side > 0 ? geometry.LeftX : geometry.RightX;
+            var lofted = Start(new(new(x + side * (geometry.BarricadeOffset - .5), 12), new(side * 80, 0)), physics);
+            Check(Run(lofted, 60).Any(e => e.Kind == ContactKind.Terrace), "Lofted shot missed the stands");
+            Check(lofted.Ball.Velocity.X * side < 0, "Terrace riser did not return ball toward pitch");
+            int row = 12;
+            double inner = x + side * geometry.RowOffset(row), height = geometry.RowHeight(row);
+            var drop = Start(new(new(inner + side * geometry.RowDepth / 2, height + .35), new(0, -3)), physics);
+            Check(Run(drop, 15).Any(e => e.Kind == ContactKind.Terrace) && drop.Ball.Velocity.Y > 0, "Terrace tread did not bounce ball");
+            var settled = Start(new(new(inner + side * geometry.RowDepth / 2, height + physics.BallRadius + 1e-5), Vec2.Zero), physics);
+            Run(settled, 360);
+            Near(height + physics.BallRadius + 1e-5, settled.Ball.Position.Y, 1e-8, "Resting terrace support drifted");
+            var fast = Start(new(new(inner - side * .2, height - .35), new(side * 180, 0)), physics with { Substeps = 1 });
+            Check(Run(fast, 1).Any(e => e.Kind == ContactKind.Terrace) && fast.Ball.Velocity.X * side < 0,
+                "Fast ball tunneled through terrace riser");
+            var clear = Start(new(new(x + side * geometry.SeatingOffset, 30), new(side * 100, 0)), physics);
+            Check(!Run(clear, 28).Any(e => e.Kind is ContactKind.Terrace or ContactKind.Barricade), "High ball cannot clear seating");
         }
     }
 }

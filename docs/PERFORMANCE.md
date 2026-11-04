@@ -66,3 +66,23 @@ dotnet run --project Tests/Cricket.Physics.Tests.csproj
 When invoking Godot directly, append `-- --performance-test`. Optional user arguments are `--performance-cycles=3`, `--performance-seconds=6`, `--performance-output=artifacts/custom.json` and `--performance-uncapped`. The last option disables the cap and VSync for that diagnostic process only; normal play retains the power limits. Keep builds and other game instances closed during timing measurements. The benchmark never writes gameplay configuration and exits automatically.
 
 Verification completed: clean build with zero warnings, all 47 core checks, gameplay smoke including focus pause and 30/120 FPS transitions, batting-preview controls/reloads, unused-import analysis, and visual inspection of normal/zoomed field and settings captures. The new checks cover cancellation/latest-result publication, worker disposal, bounded ball trails and near-zero steady-state physics allocation. Existing determinism, momentum, collision, foot-contact, bone-length and 30/60/144 FPS interpolation checks remain in place.
+
+## Stadium seating regression check — 2026-11-04
+
+Parking was replaced by 28 concrete seating tiers, 16 access staircases and a deterministic spectator crowd. An initial many-polygon crowd exceeded the moving-camera budget. The final renderer uses an Inkscape-exported 1024 × 1280 atlas (about 147 KiB on disk), one quad per visible spectator and the existing two scenery meshes. Packed colour/UV attributes upload directly from reusable buffers. Terrace curves use 160 segments; the boundary/wall curves retain 320. There are no per-person nodes, timers or colliders. Fixed-camera views still perform no scenery rebuilds.
+
+The final short local benchmark (`artifacts/performance-seating.json`) used the reference hardware and renderer above, native 3840 × 2160 fullscreen, VSync and the existing 120 FPS limit, two seconds of warm-up and three seconds sampled per scenario:
+
+| Scenario | Average FPS | Frame interval p99 | Median draw calls |
+| --- | ---: | ---: | ---: |
+| Ready | 119.999 | 8.434 ms | 123 |
+| Live delivery | 119.998 | 9.452 ms | 127 |
+| Wide field | 119.998 | 8.403 ms | 128 |
+| Moving camera | 119.998 | 8.391 ms | 128 |
+| Dragging settings | 119.998 | 8.397 ms | 156 |
+| Repeated deliveries | 119.994 | 8.404 ms | 124 |
+| Main menu | 119.997 | 8.696 ms | 16 |
+
+All seven sampling windows recorded zero managed garbage collections. Moving-camera allocation was 268 bytes/frame including benchmark bookkeeping; working set ranged from 255–283 MiB across scenarios. Camera-motion CPU usage was 63.5% of one logical core. These short averages do not promise a perfect frame lock or long-session stability. Captures run separately and their displayed FPS includes intentional capture waits/readback stalls.
+
+Debug (optimized) and `ExportRelease` builds completed with zero warnings/errors; all 52 Release core checks and the native gameplay/menu smoke checks passed. Captures of normal, both side zooms and the full stadium were inspected. The timed run used the optimized local game build, not a packaged export; export templates/presets are not installed/configured here, so exported-build hardware validation remains outstanding.

@@ -1,17 +1,15 @@
-﻿using Cricket.Physics;
+using Cricket.Physics;
 using Cricket2D.Presentation;
 using Godot;
 
 namespace Cricket2D;
 
 /// <summary>Immutable world geometry projected into retained meshes only when framing changes.</summary>
-internal sealed class FieldDrawing : IDisposable
+internal sealed partial class FieldDrawing : IDisposable
 {
     private const int Segments = 320;
     private readonly record struct Vertex(Vec2 Ground, double Height = 0);
-    private sealed record Primitive(Vertex[] Vertices, Color Colour, float LineWidth = 0, double Radius = 0);
-    private static readonly Color[] CarColours = [new("d6d9d5"), new("466d81"), new("a35b47"),
-        new("404a51"), new("b3b5a3"), new("6b7f63")];
+    private sealed record Primitive(Vertex[] Vertices, Color Colour, float LineWidth = 0, StadiumSeat[]? Seats = null);
     private readonly FieldGeometry _geometry;
     private readonly Texture2D _sky = GD.Load<Texture2D>("res://Assets/Field/sky.png");
     private readonly FieldMesh _background = new(), _foreground = new();
@@ -26,8 +24,8 @@ internal sealed class FieldDrawing : IDisposable
     public FieldDrawing(FieldGeometry geometry)
     {
         _geometry = geometry;
-        _building = _back; OuterWall(false); Parking(); Ring(false);
-        _building = _front; Ring(true); OuterWall(true);
+        _building = _back; OuterWall(false); Stands(false); Ring(false);
+        _building = _front; Ring(true); Stands(true); OuterWall(true);
         foreach (int side in new[] { -1, 1 })
         {
             double x = side > 0 ? geometry.LeftX : geometry.RightX;
@@ -44,8 +42,6 @@ internal sealed class FieldDrawing : IDisposable
     private void Face(Color colour, params Vertex[] vertices) => _building.Add(new(vertices, colour));
     private void Line(Vec2 a, Vec2 b, Color colour, float width = 1, double height = 0) =>
         _building.Add(new([new(a, height), new(b, height)], colour, width));
-    private void Disc(Vec2 point, double height, double radius, Color colour) =>
-        _building.Add(new([new(point, height)], colour, Radius: radius));
 
     public void Background(Node2D canvas, FieldCamera camera)
     {
@@ -69,7 +65,7 @@ internal sealed class FieldDrawing : IDisposable
 
     private void Ground()
     {
-        double far = Settings.Boundary.DepthRadiusMetres + _geometry.ParkingOffset + Settings.Parking.WidthMetres + 35;
+        double far = Settings.Boundary.DepthRadiusMetres + _geometry.OuterBarricadeOffset + 35;
         float horizon = P(new(_geometry.CentreX, far)).Y;
         for (int i = 0; i < 50; i++)
         {
@@ -90,21 +86,23 @@ internal sealed class FieldDrawing : IDisposable
     private void Project(Primitive primitive, FieldMesh mesh)
     {
         var vertices = primitive.Vertices;
-        if (primitive.Radius > 0)
-        {
-            var centre = vertices[0];
-            if (centre.Ground.Y <= _near) return;
-            mesh.Disc(P(centre.Ground, centre.Height),
-                Math.Max(.5f, (float)(primitive.Radius * FieldLayout.Scale(_camera, centre.Ground.Y))), primitive.Colour);
-            return;
-        }
+        if (primitive.Seats != null) { DrawSeats(primitive.Seats, mesh); return; }
         if (primitive.LineWidth > 0)
         {
             Vec2 a = vertices[0].Ground, b = vertices[1].Ground;
+            double heightA = vertices[0].Height, heightB = vertices[1].Height;
             if (a.Y <= _near && b.Y <= _near) return;
-            if (a.Y <= _near) a = Vec2.Lerp(a, b, (_near - a.Y) / (b.Y - a.Y));
-            if (b.Y <= _near) b = Vec2.Lerp(b, a, (_near - b.Y) / (a.Y - b.Y));
-            mesh.Line(P(a, vertices[0].Height), P(b, vertices[1].Height), primitive.Colour, primitive.LineWidth);
+            if (a.Y <= _near)
+            {
+                double fraction = (_near - a.Y) / (b.Y - a.Y);
+                a = Vec2.Lerp(a, b, fraction); heightA += (heightB - heightA) * fraction;
+            }
+            if (b.Y <= _near)
+            {
+                double fraction = (_near - b.Y) / (a.Y - b.Y);
+                b = Vec2.Lerp(b, a, fraction); heightB += (heightA - heightB) * fraction;
+            }
+            mesh.Line(P(a, heightA), P(b, heightB), primitive.Colour, primitive.LineWidth);
             return;
         }
         Span<Vector2> clipped = stackalloc Vector2[6];
@@ -123,58 +121,6 @@ internal sealed class FieldDrawing : IDisposable
             previous = current;
         }
         mesh.Polygon(primitive.Colour, clipped[..count]);
-    }
-
-    private void Parking()
-    {
-        double start = _geometry.ParkingOffset, end = _geometry.OuterBarricadeOffset;
-        for (int i = 0; i < Segments; i++)
-        {
-            double a = i * Math.Tau / Segments, b = (i + 1) * Math.Tau / Segments;
-            Vec2 ia = _geometry.OvalPoint(a, start), ib = _geometry.OvalPoint(b, start), oa = _geometry.OvalPoint(a, end), ob = _geometry.OvalPoint(b, end);
-            Face(new("596263"), new(ia), new(ib), new(ob), new(oa));
-            Line(oa, ob, new("b7b9a5"), 1.5f); Line(ia, ib, new("aeb6a2"), 1.2f);
-            if (i % 4 < 2) Line(_geometry.OvalPoint(a, (start + end) / 2), _geometry.OvalPoint(b, (start + end) / 2), new("d1c99a"));
-        }
-        int bays = (int)(Math.Tau * Math.Sqrt((_geometry.RadiusX * _geometry.RadiusX +
-            Settings.Boundary.DepthRadiusMetres * Settings.Boundary.DepthRadiusMetres) / 2) / 3.3);
-        int[] order = Enumerable.Range(0, bays).OrderByDescending(i => Math.Sin(i * Math.Tau / bays)).ToArray();
-        for (int row = 0; row < 2; row++)
-        {
-            double offset = row == 0 ? start + 3 : end - 3;
-            foreach (int i in order)
-            {
-                double angle = i * Math.Tau / bays;
-                Line(_geometry.OvalPoint(angle, offset - 2.4), _geometry.OvalPoint(angle, offset + 2.4), new("c5c8b9"));
-                if ((i + row * 3) % 7 is 0 or 1) continue;
-                Car((i + .5) * Math.Tau / bays, offset, CarColours[(i * 7 + row) % CarColours.Length]);
-            }
-        }
-    }
-
-    private void Car(double angle, double offset, Color colour)
-    {
-        Vec2 centre = _geometry.OvalPoint(angle, offset);
-        Vec2 normal = new Vec2(Math.Cos(angle) / _geometry.RadiusX, Math.Sin(angle) / Settings.Boundary.DepthRadiusMetres).Normalized;
-        Vec2 side = normal.Perpendicular;
-        Vec2[] corners = [centre-normal*2.05-side*.87,centre+normal*2.05-side*.87,
-            centre+normal*2.05+side*.87,centre-normal*2.05+side*.87];
-        Face(new(0, 0, 0, .22f), corners.Select(p => new Vertex(p + new Vec2(.2, -.2))).ToArray());
-        foreach (int j in Enumerable.Range(0, 4).OrderByDescending(j => (corners[j].Y + corners[(j + 1) % 4].Y) / 2))
-            Face(colour.Darkened(.23f), new(corners[j], .18), new(corners[(j + 1) % 4], .18),
-                new(corners[(j + 1) % 4], .85), new(corners[j], .85));
-        Face(colour, corners.Select(p => new Vertex(p, .85)).ToArray());
-        Vec2[] roof = [centre-normal*.95-side*.7,centre+normal*.8-side*.7,
-            centre+normal*.8+side*.7,centre-normal*.95+side*.7];
-        Vec2[] windowBase = [centre-normal*1.3-side*.84,centre+normal*1.15-side*.84,
-            centre+normal*1.15+side*.84,centre-normal*1.3+side*.84];
-        foreach (int j in Enumerable.Range(0, 4).OrderByDescending(j => (windowBase[j].Y + windowBase[(j + 1) % 4].Y) / 2))
-            Face(new("293f49"), new(windowBase[j], .86), new(windowBase[(j + 1) % 4], .86),
-                new(roof[(j + 1) % 4], 1.35), new(roof[j], 1.35));
-        Face(colour.Lightened(.10f), roof.Select(p => new Vertex(p, 1.35)).ToArray());
-        foreach (double axle in new[] { -1.25, 1.25 })
-        foreach (double sign in new[] { -1.0, 1.0 })
-            Disc(centre + normal * axle + side * (sign * .89), .27, .26, new("263231"));
     }
 
     private void Ring(bool front)
