@@ -37,6 +37,7 @@ public readonly record struct BattingFrame(Vec2 Hip, Vec2 Shoulder, double Shoul
 internal sealed class BattingMotion
 {
     private readonly BattingSettings _settings;
+    private readonly double _minimumShift, _maximumShift, _minimumCrouch, _maximumCrouch;
     private DampedValue _shift, _lean, _crouch, _head, _heel, _step;
     private bool _stroke, _returning, _wasForward, _wasSnapping;
     private double _stepTarget, _stepElapsed;
@@ -47,6 +48,10 @@ internal sealed class BattingMotion
     public BattingMotion(BattingSettings settings, double clock)
     {
         _settings = settings;
+        _minimumShift = settings.Stance.PoseBySwing.Min(k => k.HipShiftMetres) - settings.BodyMotion.HipTransferMetres;
+        _maximumShift = settings.Stance.PoseBySwing.Max(k => k.HipShiftMetres);
+        _minimumCrouch = settings.Stance.PoseBySwing.Min(k => k.CrouchMetres);
+        _maximumCrouch = settings.Stance.PoseBySwing.Max(k => k.CrouchMetres) + settings.BodyMotion.AdditionalCrouchMetres;
         _shift.Value = ClockCurve.Sample(settings.Stance.PoseBySwing, clock, k => k.HipShiftMetres);
         _lean.Value = ClockCurve.Sample(settings.Stance.PoseBySwing, clock, k => k.ShoulderLeanMetres);
         _crouch.Value = ClockCurve.Sample(settings.Stance.PoseBySwing, clock, k => k.CrouchMetres);
@@ -103,10 +108,8 @@ internal sealed class BattingMotion
         _crouch.Advance(ClockCurve.Sample(s.Stance.PoseBySwing, clock, k => k.CrouchMetres) +
             s.BodyMotion.AdditionalCrouchMetres * intensity, settling, dt);
         // Changing the recovery damping must never carry momentum outside the validated envelope.
-        _shift.Constrain(s.Stance.PoseBySwing.Min(k => k.HipShiftMetres) - s.BodyMotion.HipTransferMetres,
-            s.Stance.PoseBySwing.Max(k => k.HipShiftMetres));
-        _crouch.Constrain(s.Stance.PoseBySwing.Min(k => k.CrouchMetres),
-            s.Stance.PoseBySwing.Max(k => k.CrouchMetres) + s.BodyMotion.AdditionalCrouchMetres);
+        _shift.Constrain(_minimumShift, _maximumShift);
+        _crouch.Constrain(_minimumCrouch, _maximumCrouch);
         _heel.Advance(_stroke && planted ? s.Footwork.RearHeelDegrees * Math.PI / 180 : 0, settling, dt);
         _heel.Constrain(0, s.Footwork.RearHeelDegrees * Math.PI / 180);
         if (Math.Abs(_heel.Value) < 1e-8 && Math.Abs(_heel.Velocity) < 1e-7) _heel = default;

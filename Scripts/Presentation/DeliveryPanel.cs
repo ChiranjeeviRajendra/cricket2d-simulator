@@ -17,6 +17,8 @@ public partial class DeliveryPanel : Control
     private readonly List<PanelContainer> _rows = [];
     private int _selected;
     private PanelContainer _card = null!;
+    private readonly StyleBoxFlat _rowNormal = VisualTheme.Box(Colors.Transparent, VisualTheme.Border, 6, 12);
+    private readonly StyleBoxFlat _rowSelected = VisualTheme.Box(Colors.Transparent, VisualTheme.Ink, 6, 12);
 
     public override void _Ready()
     {
@@ -110,7 +112,7 @@ public partial class DeliveryPanel : Control
         string? format = null, string unit = "")
     {
         var frame = new PanelContainer();
-        frame.AddThemeStyleboxOverride("panel", VisualTheme.Box(Colors.Transparent, VisualTheme.Border, 6, 12));
+        frame.AddThemeStyleboxOverride("panel", _rowNormal);
         _rows.Add(frame);
         parent.AddChild(frame);
         var content = new VBoxContainer();
@@ -158,7 +160,8 @@ public partial class DeliveryPanel : Control
     private void RefreshSelection()
     {
         for (int i = 0; i < _rows.Count; i++)
-            _rows[i].AddThemeStyleboxOverride("panel", VisualTheme.Box(Colors.Transparent,
-                i == _selected ? VisualTheme.Ink : VisualTheme.Border, 6, 12));
+            _rows[i].AddThemeStyleboxOverride("panel", i == _selected ? _rowSelected : _rowNormal);
     }
+
+    public override void _ExitTree() { _rowNormal.Dispose(); _rowSelected.Dispose(); }
 }

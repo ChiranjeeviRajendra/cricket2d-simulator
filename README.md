@@ -16,6 +16,8 @@ If Godot has moved:
 
 You can also set `GODOT4` to the Godot executable. `Play.cmd` uses a process-local PowerShell execution-policy override; it does not change the machine's execution policy. The launcher does not install applications or require administrator access. The initial build needs a .NET 10 SDK, selected by `global.json`. Dependency packages and build outputs stay in this repository's ignored directories. Godot uses its ordinary Windows user-profile cache directories.
 
+Rendering is capped at **120 FPS while focused** and **30 FPS while unfocused**, with VSync enabled. Use `.\tools\Run.ps1 -FourK` for fullscreen 4K, or `-PerformanceTest` for an automated rendered benchmark. The [performance audit](docs/PERFORMANCE.md) records the measured improvements, hardware, regression checks and limitations.
+
 ## Delivery setup
 
 The game opens on the **Main Menu** with **Play Match** (disabled), **Practice**, **Settings** (disabled) and **Exit**. Select **Practice → Batting** to enter the existing batting gameplay; **Bowling** is disabled. Menus support mouse clicks, the left stick, arrow keys/D-pad, Enter/A to select, and Escape/B to go back from Practice. Selected items use a charcoal fill and soft ivory text; the remaining UI uses soft ivory panels and warm grey text.

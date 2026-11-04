@@ -40,6 +40,8 @@ var tests = new (string Name, Action Run)[]
     ("Preview playback agrees at 30/60/144 FPS, pauses, steps, loops and recovers", AnimationChecks.Playback),
     ("Preview reload is atomic and validates the combined movement envelope", AnimationChecks.Reload),
     ("Pitch slider preserves stump spacing and the 25 m extension", PitchLengthScaling),
+    ("Preview solver cancels stale work and publishes only the latest slider values", PerformanceChecks.PreviewWorker),
+    ("Steady physics avoids per-tick heap allocation and bounds the trail", PerformanceChecks.SteadySimulationAllocations),
     ("Render rates of 30, 60 and 144 Hz yield identical simulation", RenderRates),
     ("Camera fits the ball and both wickets in either direction", CameraFraming),
     ("Camera retains zoom during flight and resets for the next ball", CameraReset),

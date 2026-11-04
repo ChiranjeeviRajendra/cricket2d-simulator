@@ -10,6 +10,7 @@ public partial class PitchLengthSlider : Godot.Range
     private const float Inset = 28, RailY = 72;
     private bool _dragging;
     private Font _font = null!;
+    private StyleBoxFlat _badge = null!;
     internal float XForMetres(double metres) => Inset + (float)PitchLengthScale.FractionForMetres(metres) * (Size.X - 2 * Inset);
 
     public override void _Ready()
@@ -17,6 +18,7 @@ public partial class PitchLengthSlider : Godot.Range
         FocusMode = FocusModeEnum.All;
         MouseDefaultCursorShape = CursorShape.PointingHand;
         _font = GetThemeDefaultFont();
+        _badge = VisualTheme.Box(VisualTheme.Ink, VisualTheme.Ink, 4, 0);
         ValueChanged += _ => QueueRedraw();
         Resized += QueueRedraw;
     }
@@ -53,7 +55,7 @@ public partial class PitchLengthSlider : Godot.Range
         string value = $"{Value:0.00} m";
         Vector2 textSize = _font.GetStringSize(value, fontSize: 16);
         float badgeX = Math.Clamp(thumb - textSize.X / 2 - 8, 2, Size.X - textSize.X - 18);
-        DrawStyleBox(VisualTheme.Box(ink, ink, 4, 0), new(badgeX, 4, textSize.X + 16, 26));
+        DrawStyleBox(_badge, new(badgeX, 4, textSize.X + 16, 26));
         DrawString(_font, new(badgeX + 8, 23), value, fontSize: 16, modulate: VisualTheme.OnDark);
 
         void Stumps(double metres)
@@ -94,4 +96,6 @@ public partial class PitchLengthSlider : Godot.Range
     }
 
     private void SelectAt(float x) => Value = PitchLengthScale.SelectMetres((x - Inset) / Math.Max(1, Size.X - 2 * Inset));
+
+    public override void _ExitTree() => _badge.Dispose();
 }

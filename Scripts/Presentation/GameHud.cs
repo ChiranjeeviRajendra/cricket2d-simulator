@@ -12,6 +12,8 @@ public partial class GameHud : Control
     private Label _maxLength = null!;
     private Label _maxHeight = null!;
     private Label _fps = null!;
+    private double _lastSpeed = double.NaN, _lastMaxSpeed = double.NaN,
+        _lastLength = double.NaN, _lastHeight = double.NaN, _lastFps = double.NaN;
 
     public override void _Ready()
     {
@@ -32,11 +34,19 @@ public partial class GameHud : Control
     public void Refresh(Simulation sim)
     {
         double liveSpeed = sim.Phase == DeliveryPhase.Live ? sim.Ball.Velocity.Length : 0;
-        _speed.Text = $"{SpeedUnits.ToKilometresPerHour(liveSpeed):0.0} km/h";
-        _maxSpeed.Text = $"{SpeedUnits.ToKilometresPerHour(sim.Statistics.MaxSpeed):0.0} km/h";
-        _maxLength.Text = $"{sim.Statistics.MaxLengthFromBatter:0.00} m";
-        _maxHeight.Text = $"{sim.Statistics.MaxHeight:0.00} m";
-        _fps.Text = $"{Engine.GetFramesPerSecond():0}";
+        SetValue(_speed, SpeedUnits.ToKilometresPerHour(liveSpeed), 1, " km/h", ref _lastSpeed);
+        SetValue(_maxSpeed, SpeedUnits.ToKilometresPerHour(sim.Statistics.MaxSpeed), 1, " km/h", ref _lastMaxSpeed);
+        SetValue(_maxLength, sim.Statistics.MaxLengthFromBatter, 2, " m", ref _lastLength);
+        SetValue(_maxHeight, sim.Statistics.MaxHeight, 2, " m", ref _lastHeight);
+        SetValue(_fps, Engine.GetFramesPerSecond(), 0, "", ref _lastFps);
+    }
+
+    private static void SetValue(Label label, double value, int digits, string unit, ref double previous)
+    {
+        double rounded = Math.Round(value, digits);
+        if (rounded == previous) return;
+        previous = rounded;
+        label.Text = rounded.ToString(digits == 0 ? "0" : digits == 1 ? "0.0" : "0.00") + unit;
     }
 
     private Label Stat(string caption, string value, float x)

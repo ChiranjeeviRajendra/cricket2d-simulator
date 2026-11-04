@@ -8,8 +8,13 @@ namespace Cricket2D;
 public partial class GroundView : Node2D
 {
     public Simulation Simulation { get; set; } = null!;
-    public bool ShowTrajectory { get; set; } = true;
-    public bool Diagnostics { get; set; }
+    private bool _showTrajectory = true, _diagnostics, _viewDirty = true;
+    private BattingFrame _lastFrame;
+    private DeliveryPhase _lastPhase;
+    private DeliveryPlan? _preview;
+    private Func<Vec2, Vector2> _worldToScreen = null!;
+    public bool ShowTrajectory { get => _showTrajectory; set { _viewDirty |= _showTrajectory != value; _showTrajectory = value; } }
+    public bool Diagnostics { get => _diagnostics; set { _viewDirty |= _diagnostics != value; _diagnostics = value; } }
     private double _pausedFraction;
     private long _resumeTick = -1;
     private bool _interpolationPaused;
@@ -21,12 +26,12 @@ public partial class GroundView : Node2D
             if (value && !_interpolationPaused) _pausedFraction = RenderFraction;
             if (!value && _interpolationPaused) _resumeTick = Simulation.TickCount;
             _interpolationPaused = value;
+            _viewDirty = true;
         }
     }
     private double RenderFraction => Simulation.Phase == DeliveryPhase.Setup ? 1 :
         _interpolationPaused || _resumeTick == Simulation.TickCount ? _pausedFraction : Engine.GetPhysicsInterpolationFraction();
-    public DeliveryPlan? Preview { get; set; }
-    private const float Left = (float)FieldCamera.Left;
+    public DeliveryPlan? Preview { get => _preview; set { _viewDirty |= !ReferenceEquals(_preview, value); _preview = value; } }
     private const float GroundY = (float)FieldCamera.GroundY;
     private readonly FieldCamera _camera = new();
     private float PixelsPerMetre => (float)_camera.PixelsPerMetre;
@@ -39,16 +44,24 @@ public partial class GroundView : Node2D
     private static readonly Color ShadowWhite = new("9caeaa");
     private static readonly Color BatWood = new("d4b781");
     private FieldDrawing _fieldDrawing = null!;
+    internal int SceneryRebuilds => _fieldDrawing.RebuildCount;
 
     public override void _Ready()
     {
         PhysicsInterpolationMode = PhysicsInterpolationModeEnum.Off;
         TextureFilter = TextureFilterEnum.LinearWithMipmaps;
         _fieldDrawing = new(Simulation.Field);
+        _worldToScreen = W;
     }
 
     public override void _Process(double delta)
     {
+        if (!IsVisibleInTree()) return;
+        if ((Simulation.Phase == DeliveryPhase.Setup || InterpolationPaused) && !_viewDirty &&
+            _lastPhase == Simulation.Phase && _lastFrame == Simulation.Batter.Frame) return;
+        _lastPhase = Simulation.Phase;
+        _lastFrame = Simulation.Batter.Frame;
+        _viewDirty = false;
         if (TrackedBallPosition is Vec2 ball) _camera.Fit(ball);
         else _camera.Reset();
         QueueRedraw();
@@ -57,10 +70,13 @@ public partial class GroundView : Node2D
     internal void SetCaptureBall(Vec2? position)
     {
         _captureBall = position;
+        _viewDirty = true;
         _camera.Reset();
         if (position is Vec2 ball) _camera.Fit(ball);
         QueueRedraw();
     }
+
+    public override void _ExitTree() => _fieldDrawing?.Dispose();
 
     public override void _Draw()
     {
@@ -131,7 +147,7 @@ public partial class GroundView : Node2D
     private void Batter()
     {
         BattingFrame frame = BattingFrame.Interpolate(Simulation.PreviousFrame, Simulation.Batter.Frame, RenderFraction);
-        BatterDrawing.Draw(this, BattingRig.BuildPose(frame, Simulation.Batting), Simulation.Settings, W, PixelsPerMetre, Diagnostics);
+        BatterDrawing.Draw(this, BattingRig.BuildPose(frame, Simulation.Batting), Simulation.Settings, _worldToScreen, PixelsPerMetre, Diagnostics);
     }
     private void Bowler()
     {
@@ -146,7 +162,7 @@ public partial class GroundView : Node2D
         Vec2 frontAnkle = new(hip.X + 0.29, 0.06);
         Vec2 rearKnee = BattingRig.SolveJoint(hip, rearAnkle, 0.46 * scale, 0.43 * scale, 1);
         Vec2 frontKnee = BattingRig.SolveJoint(hip, frontAnkle, 0.46 * scale, 0.43 * scale, 1);
-        DrawEllipse(W(new(hip.X, 0)), new Vector2(26, 4) * Zoom, new Color(0, 0, 0, 0.2f));
+        DrawingPrimitives.Ellipse(this, W(new(hip.X, 0)), new Vector2(26, 4) * Zoom, new Color(0, 0, 0, 0.2f));
         Limb(hip, rearKnee, new("658d8c"), 0.12);
         Limb(rearKnee, rearAnkle, new("658d8c"), 0.10);
         Shoe(rearAnkle, ShadowWhite);
@@ -189,7 +205,7 @@ public partial class GroundView : Node2D
         if (TrackedBallPosition is not Vec2 position) return;
         Vector2 screen = W(position);
         Vector2 ground = W(new(position.X, 0));
-        DrawEllipse(ground, new(Math.Max(2, (4 + (float)position.Y) * Zoom), 1.5f), new Color(0, 0, 0, 0.15f));
+        DrawingPrimitives.Ellipse(this, ground, new(Math.Max(2, (4 + (float)position.Y) * Zoom), 1.5f), new Color(0, 0, 0, 0.15f));
         // Minimum visible radius and halo keep distant balls readable; physics size is unchanged.
         DrawCircle(screen, 5, new Color(1, 0.6f, 0.4f, 0.12f));
         DrawCircle(screen, Math.Max(2.2f, (float)Simulation.Settings.BallRadius * PixelsPerMetre), new("e8735c"));
@@ -213,10 +229,4 @@ public partial class GroundView : Node2D
         DrawCircle(W(b), pixels / 2, color);
     }
     private void Shoe(Vec2 ankle, Color color) => Limb(ankle + new Vec2(-0.10, -0.04), ankle + new Vec2(0.05, -0.04), color, 0.075);
-    private void DrawEllipse(Vector2 center, Vector2 radius, Color color)
-    {
-        var points = new Vector2[24];
-        for (int i = 0; i < points.Length; i++) points[i] = center + Vector2.FromAngle(i * MathF.Tau / points.Length) * radius;
-        DrawColoredPolygon(points, color);
-    }
 }

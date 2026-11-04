@@ -6,6 +6,9 @@ namespace Cricket2D;
 /// <summary>Input bindings are named actions; the core never reads hardware directly.</summary>
 public static class BattingControls
 {
+    private static readonly StringName SwingLeft = "swing_left", SwingRight = "swing_right",
+        SwingUp = "swing_up", SwingDown = "swing_down", BatLeft = "bat_left", BatRight = "bat_right",
+        BatUp = "bat_up", BatDown = "bat_down";
     public static void Register()
     {
         Axis("swing_left", Key.A, JoyAxis.LeftX, -1);
@@ -21,15 +24,9 @@ public static class BattingControls
     public static BattingInput Read()
     {
         // The core applies the configurable radial dead zones exactly once.
-        Vector2 left = Godot.Input.GetVector("swing_left", "swing_right", "swing_up", "swing_down", 0);
-        Vector2 right = Godot.Input.GetVector("bat_left", "bat_right", "bat_up", "bat_down", 0);
+        Vector2 left = Godot.Input.GetVector(SwingLeft, SwingRight, SwingUp, SwingDown, 0);
+        Vector2 right = Godot.Input.GetVector(BatLeft, BatRight, BatUp, BatDown, 0);
         return new(left.X, left.Y, right.X, right.Y);
-    }
-
-    public static string DeviceName()
-    {
-        var devices = Godot.Input.GetConnectedJoypads();
-        return devices.Count > 0 ? Godot.Input.GetJoyName(devices[0]) : "Keyboard ready  ·  connect a controller anytime";
     }
 
     private static void Axis(string name, Key key, JoyAxis axis, float direction)

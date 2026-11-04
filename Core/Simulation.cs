@@ -137,8 +137,9 @@ public sealed class Simulation
                 else earliest = BallFlight.GroundTime(Ball, remaining, Settings);
                 kind = ContactKind.Pitch;
             }
-            foreach (var surface in Field.Surfaces)
+            for (int surfaceIndex = 0; surfaceIndex < Field.Surfaces.Count; surfaceIndex++)
             {
+                var surface = Field.Surfaces[surfaceIndex];
                 // Supports are integrated along their plane, so do not collide with themselves.
                 if (supported && surface == support) continue;
                 if (Consider(surface.Edge, null, surface.Kind)) fieldSurface = surface;

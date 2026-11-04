@@ -53,4 +53,6 @@ This is a passive, anchored rigid-surface approximation of padding. It does not 
 
 `tools/Create-FieldSky.py` regenerates the source SVG; running it replaces manual SVG edits. `tools/Run.ps1` imports the texture before launch. Geometry and parked cars are drawn directly from the configured dimensions rather than baked into a fixed background.
 
+World geometry is cached when the field is created. Rendering uses retained background/foreground meshes, with projection and GPU buffer updates only when camera framing changes. This preserves configurable dimensions and the current projection while avoiding reconstruction of every car and oval segment each frame. Measurements are in [PERFORMANCE.md](PERFORMANCE.md).
+
 Executable checks cover editable distances, normal-offset spacing, collision/render alignment across camera scales, 3,000 passive oblique/spinning impacts, fast swept contacts, both approach directions, aerial clearance, slow settling, solid exclusion and 30/60/144 Hz rendering schedules. `--capture-preview` saves the normal views plus `artifacts/field-overview.png`, which shows the complete layout through a developer camera override.

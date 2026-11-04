@@ -50,8 +50,9 @@ public sealed class FieldGeometry
 
     public bool TrySupport(BallState ball, double radius, out FieldSurface surface)
     {
-        foreach (var candidate in Surfaces)
+        for (int i = 0; i < Surfaces.Count; i++)
         {
+            var candidate = Surfaces[i];
             if (candidate.Normal.Y <= .05) continue;
             Vec2 edge = candidate.Edge.B - candidate.Edge.A;
             double along = Vec2.Dot(ball.Position - candidate.Edge.A, edge) / edge.LengthSquared;

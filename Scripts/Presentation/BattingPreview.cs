@@ -53,14 +53,15 @@ public partial class BattingPreview : Node2D
         _status = VisualTheme.Label("Config/batsman.json\nEdit, save, then reload here.", 15, VisualTheme.Muted);
         _status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         controls.AddChild(_status);
-        GetWindow().FocusExited += () => _focusPaused = true;
-        GetWindow().FocusEntered += () => _focusPaused = false;
+        GetWindow().FocusExited += () => { _focusPaused = true; if (!_automating) Engine.MaxFps = 30; };
+        GetWindow().FocusEntered += () => { _focusPaused = false; if (!_automating) Engine.MaxFps = 120; };
         _automating = OS.GetCmdlineUserArgs().Contains("--smoke-test") || OS.GetCmdlineUserArgs().Contains("--capture-preview");
         Refresh();
     }
 
     public override void _Process(double delta)
     {
+        if (_focusPaused && !_automating) return;
         if (_automating)
         {
             if (!_automationStarted)
@@ -196,7 +197,8 @@ public partial class BattingPreview : Node2D
                     QueueRedraw();
                     await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
                     string path = System.IO.Path.Combine(directory, $"fast-{speed * 100:0}pct-{target:0.000}.png");
-                    Error result = GetViewport().GetTexture().GetImage().SavePng(path);
+                    using var image = GetViewport().GetTexture().GetImage();
+                    Error result = image.SavePng(path);
                     if (result != Error.Ok) throw new InvalidOperationException($"Capture failed: {result}");
                 }
             }
