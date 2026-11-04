@@ -26,6 +26,8 @@ public partial class GameController : Node2D
     private bool _capturePreview;
     private PerformanceRun? _performanceRun;
     private DeliveryPreviewWorker? _previewWorker;
+    private ImpactAudio? _audio;
+    private bool _quitting;
 
     public override void _Ready()
     {
@@ -55,6 +57,11 @@ public partial class GameController : Node2D
         }
         _settings = settings;
         _batting = batting;
+        if (args.Contains("--audio-smoke-test"))
+        {
+            AddChild(new AudioSmokeRun());
+            return;
+        }
         try
         {
             using var fieldFile = Godot.FileAccess.Open("res://Config/field.json", Godot.FileAccess.ModeFlags.Read);
@@ -77,8 +84,10 @@ public partial class GameController : Node2D
         _menu.ExitRequested += () =>
         {
             if (_smokeTest) _smokeExitRequested = true;
-            else GetTree().Quit();
+            else QuitGame();
         };
+        GetTree().AutoAcceptQuit = false;
+        GetWindow().CloseRequested += QuitGame;
         GetWindow().FocusExited += () => SetFocusPaused(true);
         GetWindow().FocusEntered += () => SetFocusPaused(false);
         if (_capturePreview) CapturePreview();
@@ -101,6 +110,9 @@ public partial class GameController : Node2D
             return;
         }
         _simulation = new(_settings, _batting, _field);
+        _audio = new ImpactAudio();
+        AddChild(_audio);
+        _audio.SetPaused(_paused);
         _previewWorker = new(_settings);
         _ground = new GroundView { Simulation = _simulation };
         AddChild(_ground);
@@ -115,6 +127,7 @@ public partial class GameController : Node2D
 
     private void OpenMainMenu()
     {
+        _audio?.Stop();
         _ground.InterpolationPaused = true;
         _ground.Hide();
         _hud.Hide();
@@ -123,6 +136,7 @@ public partial class GameController : Node2D
 
     public override void _PhysicsProcess(double delta)
     {
+        if (_quitting) return;
         if (_smokeTest && !_smokeMenuComplete)
         {
             if (!_smokeMenuStarted) { _smokeMenuStarted = true; SmokeMenu(); }
@@ -130,6 +144,7 @@ public partial class GameController : Node2D
         }
         if (_simulation == null || _menu.Visible || _paused && !_smokeTest && _performanceRun == null) return;
         _simulation.Tick(_smokeTest ? default : _performanceRun?.Input ?? BattingControls.Read());
+        _audio?.ConsumeContacts(_simulation);
         if (_smokeTest) SmokeTick();
     }
 
@@ -145,6 +160,7 @@ public partial class GameController : Node2D
     {
         _paused = paused;
         if (_ground != null) _ground.InterpolationPaused = paused;
+        _audio?.SetPaused(paused);
         // Automated captures/benchmarks deliberately run without user interaction.
         if (!_capturePreview && !_smokeTest && _performanceRun == null)
             Engine.MaxFps = paused ? 30 : 120;
@@ -152,6 +168,7 @@ public partial class GameController : Node2D
 
     public override void _Input(InputEvent evt)
     {
+        if (_quitting) return;
         if (evt is InputEventKey { Pressed: true, Echo: false, Keycode: Key.F11 })
         {
             DisplayServer.WindowSetMode(DisplayServer.WindowGetMode() == DisplayServer.WindowMode.Fullscreen ?
@@ -191,11 +208,13 @@ public partial class GameController : Node2D
     private void Begin(DeliverySettings request)
     {
         if (!_simulation.Begin(request, out string error)) { _hud.DeliveryPanel.ShowError(error); return; }
+        _audio?.ResetDelivery();
         _hud.DeliveryPanel.Hide();
     }
 
     private void OpenSetup()
     {
+        _audio?.Stop();
         _simulation.ReturnToSetup();
         _hud.DeliveryPanel.Open();
     }
@@ -203,6 +222,18 @@ public partial class GameController : Node2D
     private void UpdatePreview(DeliverySettings request)
     {
         _previewWorker!.Request(request);
+    }
+
+    private async void QuitGame()
+    {
+        if (_quitting) return;
+        _quitting = true;
+        _audio?.Stop();
+        // Godot's audio mixer releases stopped playback asynchronously. Let it
+        // finish before engine shutdown, including closing the window during a hit.
+        if (_audio is { PlayedCount: > 0 })
+            await ToSignal(GetTree().CreateTimer(.15), SceneTreeTimer.SignalName.Timeout);
+        GetTree().Quit();
     }
 
 }

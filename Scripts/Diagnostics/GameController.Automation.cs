@@ -46,6 +46,7 @@ public partial class GameController
         SmokeButton(JoyButton.A);
         SmokeButton(JoyButton.A);
         valid &= !_menu.Visible && _simulation != null && _simulation.Phase == DeliveryPhase.Setup && !_hud.DeliveryPanel.Visible;
+        valid &= _audio is { ReadyForPlayback: true };
         SmokeKey(Key.Enter);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);

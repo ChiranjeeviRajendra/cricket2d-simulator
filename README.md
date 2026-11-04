@@ -40,6 +40,8 @@ The release is at x = 1.2192 m, on the bowler's popping crease. The length setti
 
 The batter is always visible and permanently invulnerable to the ball. The ball passes through his body, pads and helmet without a collision response. **The bat and wickets remain collidable.**
 
+Bat contacts now use the supplied **perfect-shot** or **imperfect-shot** recording based on contact position and face alignment; wicket hits use the supplied **wicket** sound. Quieter impacts play more softly. Add sample variations and tune selection/volume in `Config/audio.json`; see [AUDIO.md](docs/AUDIO.md) for extending the sound library.
+
 ## Stats, camera and boundaries
 
 The camera automatically zooms out to keep the ball and both wickets visible. When the ball moves beyond the left side, the wickets remain toward the right edge; when it moves beyond the right side, they remain toward the left edge. High shots also expand the view vertically. The camera keeps the widest zoom for the rest of that delivery and returns to the initial view when settings reopen.

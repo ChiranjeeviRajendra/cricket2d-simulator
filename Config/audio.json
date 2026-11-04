@@ -1,0 +1,36 @@
+{
+  "Enabled": true,
+  "MasterVolumeDb": -6,
+  "MaxVoices": 4,
+  "MinimumImpactSpeed": 0.5,
+  "FullVolumeImpactSpeed": 20,
+  "SoftImpactVolumeDb": -12,
+  "Cues": {
+    "shot_perfect": {
+      "VolumeDb": 0,
+      "CooldownSeconds": 0.08,
+      "Variants": ["res://Assets/Sounds/Runtime/perfect-shot-1.wav"]
+    },
+    "shot_imperfect": {
+      "VolumeDb": 0,
+      "CooldownSeconds": 0.08,
+      "Variants": ["res://Assets/Sounds/Runtime/imperfect-shot-1.wav"]
+    },
+    "wicket": {
+      "VolumeDb": 2,
+      "CooldownSeconds": 0.12,
+      "Variants": ["res://Assets/Sounds/Runtime/wicket-out.wav"]
+    }
+  },
+  "Rules": [
+    {
+      "Contact": "Bat",
+      "Cue": "shot_perfect",
+      "MinBladeFraction": 0.35,
+      "MaxBladeFraction": 0.80,
+      "MinFaceAlignment": 0.85
+    },
+    { "Contact": "Bat", "Cue": "shot_imperfect" },
+    { "Contact": "Wicket", "Cue": "wicket", "OncePerDelivery": true }
+  ]
+}

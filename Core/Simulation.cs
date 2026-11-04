@@ -2,7 +2,9 @@ namespace Cricket.Physics;
 
 public enum DeliveryPhase { Setup, Windup, Live }
 public enum ContactKind { Pitch, Bat, Wicket, Boundary, Barricade }
-public readonly record struct ContactEvent(ContactKind Kind, Vec2 Position, double SpeedBefore, double SpeedAfter);
+/// <summary>Impact measurements for presentation; blade fraction runs from the handle end of the blade to its toe.</summary>
+public readonly record struct ContactEvent(ContactKind Kind, Vec2 Position, double SpeedBefore, double SpeedAfter,
+    double ImpactSpeed = 0, double? BatBladeFraction = null, double? BatFaceAlignment = null);
 
 /// <summary>Single owner of time/state. One Tick call always advances exactly 1/120 s.</summary>
 public sealed class Simulation
@@ -156,6 +158,8 @@ public sealed class Simulation
             Ball = Travel(earliest);
             Statistics.Observe(Ball);
             double before = Ball.Velocity.Length;
+            double impactSpeed = Math.Max(0, -Vec2.Dot(Ball.Velocity, normal));
+            double? bladeFraction = null, faceAlignment = null;
             if (kind == ContactKind.Pitch)
             {
                 if (!BatHit && FirstBounceX == null) FirstBounceX = Ball.Position.X;
@@ -165,14 +169,20 @@ public sealed class Simulation
             else if (kind == ContactKind.Bat)
             {
                 BatPose impactPose = BatPose.Lerp(batFrom, batTo, (elapsed + earliest) / dt);
-                Vec2 contact = impactPose.Blade(Settings).Closest(Ball.Position);
+                Capsule blade = impactPose.Blade(Settings);
+                Vec2 contact = blade.Closest(Ball.Position);
                 Vec2 lever = contact - impactPose.Grip;
                 Vec2 batVelocity = (batTo.Grip - batFrom.Grip) / dt +
                     (batTo.Angle - batFrom.Angle) / dt * lever.Perpendicular;
+                bladeFraction = Math.Clamp(Vec2.Dot(contact - blade.A, blade.B - blade.A) /
+                    (blade.B - blade.A).LengthSquared, 0, 1);
+                faceAlignment = Math.Clamp(Math.Abs(Vec2.Dot(normal, impactPose.Direction.Perpendicular)), 0, 1);
+                impactSpeed = Math.Max(0, -Vec2.Dot(Ball.Velocity - batVelocity, normal));
                 Vec2 leverFromCentreOfMass = lever - impactPose.Direction * Settings.BatCentreOfMassFromGrip;
                 Ball = Contacts.BatImpulse(Ball, normal, batVelocity, leverFromCentreOfMass, Settings, out double impulse);
                 Ball = Ball with { Position = contact + normal * (Settings.BatHalfThickness + Settings.BallRadius + 1e-5) };
                 if (impulse > 0) { BatHit = true; HitExitSpeed = Ball.Velocity.Length; }
+                else impactSpeed = 0;
             }
             else if (kind is ContactKind.Boundary or ContactKind.Barricade)
             {
@@ -190,7 +200,7 @@ public sealed class Simulation
                 };
                 WicketHit = true;
             }
-            Events.Add(new(kind.Value, Ball.Position, before, Ball.Velocity.Length));
+            Events.Add(new(kind.Value, Ball.Position, before, Ball.Velocity.Length, impactSpeed, bladeFraction, faceAlignment));
             Statistics.Observe(Ball);
             elapsed += Math.Max(earliest, 1e-8);
 
