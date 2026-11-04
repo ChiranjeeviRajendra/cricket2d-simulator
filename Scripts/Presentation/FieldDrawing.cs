@@ -26,8 +26,8 @@ internal sealed class FieldDrawing : IDisposable
     public FieldDrawing(FieldGeometry geometry)
     {
         _geometry = geometry;
-        _building = _back; Parking(); Ring(false);
-        _building = _front; Ring(true);
+        _building = _back; OuterWall(false); Parking(); Ring(false);
+        _building = _front; Ring(true); OuterWall(true);
         foreach (int side in new[] { -1, 1 })
         {
             double x = side > 0 ? geometry.LeftX : geometry.RightX;
@@ -127,7 +127,7 @@ internal sealed class FieldDrawing : IDisposable
 
     private void Parking()
     {
-        double start = _geometry.ParkingOffset, end = start + Settings.Parking.WidthMetres;
+        double start = _geometry.ParkingOffset, end = _geometry.OuterBarricadeOffset;
         for (int i = 0; i < Segments; i++)
         {
             double a = i * Math.Tau / Segments, b = (i + 1) * Math.Tau / Segments;
@@ -189,13 +189,29 @@ internal sealed class FieldDrawing : IDisposable
             Vec2 ridgeA = _geometry.OvalPoint(a, boundary.WidthMetres / 2), ridgeB = _geometry.OvalPoint(b, boundary.WidthMetres / 2);
             Face(new("fffef7"), new(innerA), new(innerB), new(ridgeB, boundary.HeightMetres), new(ridgeA, boundary.HeightMetres));
             Face(new("d9e0d4"), new(ridgeA, boundary.HeightMetres), new(ridgeB, boundary.HeightMetres), new(outerB), new(outerA));
-            Vec2 wa = _geometry.OvalPoint(a, _geometry.BarricadeOffset), wb = _geometry.OvalPoint(b, _geometry.BarricadeOffset);
-            Vec2 xa = _geometry.OvalPoint(a, _geometry.BarricadeOffset + wall.ThicknessMetres), xb = _geometry.OvalPoint(b, _geometry.BarricadeOffset + wall.ThicknessMetres);
-            Face(new("66786e"), new(xa), new(xb), new(xb, wall.HeightMetres), new(xa, wall.HeightMetres));
-            Face(new("d5d9ce"), new(wa), new(wb), new(wb, wall.HeightMetres), new(wa, wall.HeightMetres));
-            Face(new("f0efdf"), new(wa, wall.HeightMetres), new(wb, wall.HeightMetres), new(xb, wall.HeightMetres), new(xa, wall.HeightMetres));
-            if (i % 6 == 0) _building.Add(new([new(wa), new(wa, wall.HeightMetres)], new("a2aca0"), 1));
+            WallSegment(a, b, i, _geometry.BarricadeOffset, wall.HeightMetres, wall.ThicknessMetres);
         }
+    }
+
+    private void OuterWall(bool front)
+    {
+        var wall = Settings.OuterBarricade;
+        for (int i = 0; i < Segments; i++)
+        {
+            double a = i * Math.Tau / Segments, b = (i + 1) * Math.Tau / Segments;
+            if ((Math.Sin((a + b) / 2) < 0) != front) continue;
+            WallSegment(a, b, i, _geometry.OuterBarricadeOffset, wall.HeightMetres, wall.ThicknessMetres);
+        }
+    }
+
+    private void WallSegment(double a, double b, int segment, double offset, double height, double thickness)
+    {
+        Vec2 wa = _geometry.OvalPoint(a, offset), wb = _geometry.OvalPoint(b, offset);
+        Vec2 xa = _geometry.OvalPoint(a, offset + thickness), xb = _geometry.OvalPoint(b, offset + thickness);
+        Face(new("66786e"), new(xa), new(xb), new(xb, height), new(xa, height));
+        Face(new("d5d9ce"), new(wa), new(wb), new(wb, height), new(wa, height));
+        Face(new("f0efdf"), new(wa, height), new(wb, height), new(xb, height), new(xa, height));
+        if (segment % 6 == 0) _building.Add(new([new(wa), new(wa, height)], new("a2aca0"), 1));
     }
     // The meshes are owned here; the imported sky texture is shared through Godot's resource cache.
     public void Dispose() { _background.Dispose(); _foreground.Dispose(); }

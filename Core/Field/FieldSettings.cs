@@ -9,6 +9,7 @@ public sealed record FieldSettings
     public BoundarySettings Boundary { get; init; } = new();
     public BarricadeSettings Barricade { get; init; } = new();
     public ParkingSettings Parking { get; init; } = new();
+    public OuterBarricadeSettings OuterBarricade { get; init; } = new();
     public static FieldSettings FromJson(string json)
     {
         var value = JsonSerializer.Deserialize<FieldSettings>(json, new JsonSerializerOptions
@@ -20,8 +21,8 @@ public sealed record FieldSettings
     }
     public void Validate()
     {
-        if (Boundary == null || Barricade == null || Parking == null)
-            throw new ArgumentException("Field Boundary, Barricade and Parking objects cannot be null.");
+        if (Boundary == null || Barricade == null || Parking == null || OuterBarricade == null)
+            throw new ArgumentException("Field Boundary, Barricade, Parking and OuterBarricade objects cannot be null.");
         Range(Boundary.LeftDistanceMetres, 10, 150, "Boundary.LeftDistanceMetres");
         Range(Boundary.RightDistanceMetres, 25, 180, "Boundary.RightDistanceMetres");
         Range(Boundary.DepthRadiusMetres, 20, 120, "Boundary.DepthRadiusMetres");
@@ -36,6 +37,10 @@ public sealed record FieldSettings
         if (Barricade.Friction.HasValue) Range(Barricade.Friction.Value, 0, 1, "Barricade.Friction");
         Range(Parking.VergeMetres, 0, 8, "Parking.VergeMetres");
         Range(Parking.WidthMetres, 12, 40, "Parking.WidthMetres");
+        Range(OuterBarricade.HeightMetres, .3, 80, "OuterBarricade.HeightMetres");
+        Range(OuterBarricade.ThicknessMetres, .1, 1, "OuterBarricade.ThicknessMetres");
+        if (OuterBarricade.Restitution.HasValue) Range(OuterBarricade.Restitution.Value, 0, 1, "OuterBarricade.Restitution");
+        if (OuterBarricade.Friction.HasValue) Range(OuterBarricade.Friction.Value, 0, 1, "OuterBarricade.Friction");
     }
     private static void Range(double value, double min, double max, string name)
     {
@@ -58,7 +63,7 @@ public sealed record BoundarySettings
 public sealed record BarricadeSettings
 {
     public double ClearGapMetres { get; init; } = 5;
-    public double HeightMetres { get; init; } = 2;
+    public double HeightMetres { get; init; } = 1.5;
     public double ThicknessMetres { get; init; } = .25;
     // Null inherits the pitch coefficient, including later edits to physics.json.
     public double? Restitution { get; init; }
@@ -68,4 +73,12 @@ public sealed record ParkingSettings
 {
     public double VergeMetres { get; init; } = 1.5;
     public double WidthMetres { get; init; } = 20;
+}
+public sealed record OuterBarricadeSettings
+{
+    public double HeightMetres { get; init; } = 25;
+    public double ThicknessMetres { get; init; } = .25;
+    // Null inherits the inner barricade's resolved coefficients.
+    public double? Restitution { get; init; }
+    public double? Friction { get; init; }
 }

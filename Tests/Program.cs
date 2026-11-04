@@ -53,6 +53,7 @@ var tests = new (string Name, Action Run)[]
     ("Configurable oval geometry shares physical crossings and a constant barricade gap", FieldChecks.Layout),
     ("Oblique field impacts dissipate energy, transfer spin and cannot tunnel", FieldChecks.Impacts),
     ("Live balls hit wedges and barricades, clear their tops and settle", FieldChecks.LiveContacts),
+    ("Outer parking barricade matches inner-wall response, catches lofted shots and cannot tunnel", FieldChecks.OuterBarricadeContacts),
     ("Slope support obeys gravity and field impacts are render-rate independent", FieldChecks.SupportedMotion)
 };
 int failures = 0;

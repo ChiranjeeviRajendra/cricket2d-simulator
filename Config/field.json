@@ -10,7 +10,7 @@
   },
   "Barricade": {
     "ClearGapMetres": 5,
-    "HeightMetres": 2,
+    "HeightMetres": 1.5,
     "ThicknessMetres": 0.25,
     "Restitution": null,
     "Friction": null
@@ -18,5 +18,11 @@
   "Parking": {
     "VergeMetres": 1.5,
     "WidthMetres": 20
+  },
+  "OuterBarricade": {
+    "HeightMetres": 25,
+    "ThicknessMetres": 0.25,
+    "Restitution": null,
+    "Friction": null
   }
 }

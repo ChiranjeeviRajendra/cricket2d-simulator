@@ -17,10 +17,14 @@ internal static class FieldChecks
         var g = new FieldGeometry(settings, new());
         Near(40, g.LeftX - PitchDimensions.BatterReferenceX, 1e-12, "Left distance");
         Near(75, PitchDimensions.BatterReferenceX - g.RightX, 1e-12, "Right distance");
+        Near(1.5, settings.Barricade.HeightMetres, 0, "Inner barricade height");
+        Near(25, settings.OuterBarricade.HeightMetres, 0, "Outer barricade height");
         for (int i = 0; i < 180; i++)
         {
             double a = i * Math.Tau / 180;
             Near(5, (g.OvalPoint(a, g.BarricadeOffset) - g.OvalPoint(a, settings.Boundary.WidthMetres)).Length, 1e-10, "Clear gap around oval");
+            Near(settings.Parking.WidthMetres, (g.OvalPoint(a, g.OuterBarricadeOffset) - g.OvalPoint(a, g.ParkingOffset)).Length,
+                1e-10, "Outer barricade follows parking's outer edge around the oval");
         }
         var custom = settings with { Boundary = settings.Boundary with { LeftDistanceMetres = 52, RightDistanceMetres = 91 } };
         var changed = new FieldGeometry(custom, new());
@@ -38,19 +42,32 @@ internal static class FieldChecks
                     Vec2 screen = FieldLayout.Project(camera, point);
                     Near(camera.Project(new(point.X, 0)).X, screen.X, 1e-9, "Visible/physical X");
                     Near(FieldCamera.GroundY, screen.Y, 1e-9, "Ground contact Y");
+                    Vec2 outer = geometry.OvalPoint(side == 1 ? 0 : Math.PI, geometry.OuterBarricadeOffset);
+                    double wallX = (side == 1 ? geometry.LeftX : geometry.RightX) + side * geometry.OuterBarricadeOffset;
+                    Vec2 top = FieldLayout.Project(camera, outer, geometry.Settings.OuterBarricade.HeightMetres);
+                    Near(camera.Project(new(wallX, geometry.Settings.OuterBarricade.HeightMetres)).X, top.X, 1e-9, "Outer wall collision/render X");
+                    Near(camera.Project(new(wallX, geometry.Settings.OuterBarricade.HeightMetres)).Y, top.Y, 1e-9, "Outer wall collision/render height");
                 }
         }
         var differentPitch = new SimulationSettings { GroundRestitution = .67, GroundFriction = .31 };
         var inherited = new FieldGeometry(settings, differentPitch);
         Check(inherited.Surfaces.Where(s => s.Kind == ContactKind.Barricade).All(s => s.Restitution == .67 && s.Friction == .31), "Barricade must inherit edited pitch coefficients");
+        var tuned = settings with { Barricade = settings.Barricade with { Restitution = .42, Friction = .35 } };
+        Check(new FieldGeometry(tuned, differentPitch).Surfaces.Where(s => s.Kind == ContactKind.Barricade)
+            .All(s => s.Restitution == .42 && s.Friction == .35), "Outer barricade must inherit inner barricade overrides");
+        var widened = new FieldGeometry(settings with { Parking = settings.Parking with { WidthMetres = 32 } }, new());
+        Near(12, widened.OuterBarricadeOffset - g.OuterBarricadeOffset, 1e-12, "Edited parking width moves outer wall");
         foreach (string json in new[]{"null","{\"Boundary\":null}","{\"Boundary\":{\"LeftDistanceMetres\":0}}",
-            "{\"Boundary\":{\"Restitution\":1.1}}","{\"Barricade\":{\"ClearGapMetres\":-5}}","{\"Boundary\":{\"LeftDistanceMeters\":40}}"})
+            "{\"Boundary\":{\"Restitution\":1.1}}","{\"Barricade\":{\"ClearGapMetres\":-5}}","{\"Boundary\":{\"LeftDistanceMeters\":40}}",
+            "{\"OuterBarricade\":null}","{\"OuterBarricade\":{\"HeightMetres\":81}}",
+            "{\"OuterBarricade\":{\"ThicknessMetres\":0}}","{\"OuterBarricade\":{\"Friction\":-1}}"})
         {
             bool rejected = false;
             try { FieldSettings.FromJson(json); } catch (ArgumentException) { rejected = true; } catch (System.Text.Json.JsonException) { rejected = true; }
             Check(rejected, $"Bad field settings accepted: {json}");
         }
         Near(40, FieldSettings.FromJson("{}").Boundary.LeftDistanceMetres, 0, "Defaults");
+        Near(25, FieldSettings.FromJson("{\"OuterBarricade\":{\"ThicknessMetres\":0.4}}").OuterBarricade.HeightMetres, 0, "Partial outer settings retain 25 m default");
     }
 
     public static void Impacts()
@@ -116,7 +133,11 @@ internal static class FieldChecks
             double inner = x + side * g.BarricadeOffset, outer = inner + side * g.Settings.Barricade.ThicknessMetres;
             Vec2[] rectangle = [new(inner,0),new(inner,g.Settings.Barricade.HeightMetres),
                 new(outer,g.Settings.Barricade.HeightMetres),new(outer,0)];
-            foreach (var shape in new[] { triangle, rectangle })
+            double perimeterInner = x + side * g.OuterBarricadeOffset;
+            double perimeterOuter = perimeterInner + side * g.Settings.OuterBarricade.ThicknessMetres;
+            Vec2[] perimeter = [new(perimeterInner,0),new(perimeterInner,g.Settings.OuterBarricade.HeightMetres),
+                new(perimeterOuter,g.Settings.OuterBarricade.HeightMetres),new(perimeterOuter,0)];
+            foreach (var shape in new[] { triangle, rectangle, perimeter })
             {
                 double distance = double.PositiveInfinity;
                 bool positive = false, negative = false;
@@ -196,6 +217,48 @@ internal static class FieldChecks
             }
             if (expected.HasValue) Check(sim.Ball == expected.Value, "Field contacts depend on rendering rate");
             expected = sim.Ball;
+        }
+    }
+
+    public static void OuterBarricadeContacts()
+    {
+        var physics = new SimulationSettings { AirDensity = 0 };
+        var geometry = new FieldGeometry(new(), physics);
+        foreach (int side in new[] { -1, 1 })
+        {
+            double x = side > 0 ? geometry.LeftX : geometry.RightX;
+            double inner = x + side * geometry.BarricadeOffset;
+            double outer = x + side * geometry.OuterBarricadeOffset;
+            double thickness = geometry.Settings.OuterBarricade.ThicknessMetres;
+            double height = geometry.Settings.OuterBarricade.HeightMetres;
+
+            var lowWall = Start(new(new(inner - side * .5, .65), new(side * 15, 0), 120), physics);
+            var tallWall = Start(new(new(outer - side * .5, .65), new(side * 15, 0), 120), physics);
+            Run(lowWall, 12);
+            var hits = Run(tallWall, 12);
+            Check(hits.Any(e => e.Kind == ContactKind.Barricade), "Outer wall did not collide");
+            Near(lowWall.Ball.Velocity.X, tallWall.Ball.Velocity.X, 1e-7, "Both walls have the same normal rebound");
+            Near(lowWall.Ball.Velocity.Y, tallWall.Ball.Velocity.Y, 1e-7, "Both walls have the same friction response");
+            Near(lowWall.Ball.Spin, tallWall.Ball.Spin, 1e-7, "Both walls have the same spin transfer");
+
+            // A lofted ball clears the 1.5 m wall, crosses the parking, then returns from the outer wall.
+            var acrossParking = Start(new(new(inner - side * .5, 12), new(side * 80, 0)), physics);
+            hits = Run(acrossParking, 60);
+            Check(hits.Any(e => e.Kind == ContactKind.Barricade && Math.Abs(e.Position.X - outer) < .1), "Ball cleared inner wall but missed parking perimeter");
+            Check(acrossParking.Ball.Velocity.X * side < 0, "Outer wall failed to return ball toward pitch");
+
+            var outside = Start(new(new(outer + side * (thickness + .5), 10), new(-side * 35, 0)), physics);
+            Check(Run(outside, 12).Any(e => e.Kind == ContactKind.Barricade) && outside.Ball.Velocity.X * side > 0,
+                "Outer face failed to return an incoming outside ball");
+
+            var fast = Start(new(new(outer - side * .8, 10), new(side * 180, 0)), physics with { Substeps = 1 });
+            Check(Run(fast, 1).Any(e => e.Kind == ContactKind.Barricade) && fast.Ball.Velocity.X * side < 0,
+                "Fast ball tunneled through outer barricade");
+
+            var clear = Start(new(new(outer - side * .5, height + .7), new(side * 50, 0)), physics);
+            Check(!Run(clear, 6).Any(e => e.Kind == ContactKind.Barricade), "Ball above outer wall hit invisible geometry");
+            var top = Start(new(new(outer + side * thickness / 2, height + .35), new(0, -3)), physics);
+            Check(Run(top, 15).Any(e => e.Kind == ContactKind.Barricade) && top.Ball.Velocity.Y > 0, "Outer barricade top failed to bounce ball");
         }
     }
 }

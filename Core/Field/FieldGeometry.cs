@@ -13,13 +13,14 @@ public sealed class FieldGeometry
     public double RadiusX => (LeftX - RightX) / 2;
     public double BarricadeOffset => Settings.Boundary.WidthMetres + Settings.Barricade.ClearGapMetres;
     public double ParkingOffset => BarricadeOffset + Settings.Barricade.ThicknessMetres + Settings.Parking.VergeMetres;
+    public double OuterBarricadeOffset => ParkingOffset + Settings.Parking.WidthMetres;
     public IReadOnlyList<FieldSurface> Surfaces { get; }
 
     public FieldGeometry(FieldSettings settings, SimulationSettings physics)
     {
         settings.Validate();
         Settings = settings;
-        var surfaces = new List<FieldSurface>();
+        var surfaces = new List<FieldSurface>(16);
         foreach (int side in new[] { -1, 1 })
         {
             double x = side > 0 ? LeftX : RightX;
@@ -29,11 +30,19 @@ public sealed class FieldGeometry
             Add(toe, peak, new(-side * b.HeightMetres, b.WidthMetres / 2), ContactKind.Boundary, b.Restitution, b.Friction);
             Add(peak, heel, new(side * b.HeightMetres, b.WidthMetres / 2), ContactKind.Boundary, b.Restitution, b.Friction);
             var wall = settings.Barricade;
-            double inner = x + side * BarricadeOffset, outer = inner + side * wall.ThicknessMetres;
             double e = wall.Restitution ?? physics.GroundRestitution, mu = wall.Friction ?? physics.GroundFriction;
-            Add(new(inner, 0), new(inner, wall.HeightMetres), new(-side, 0), ContactKind.Barricade, e, mu);
-            Add(new(inner, wall.HeightMetres), new(outer, wall.HeightMetres), new(0, 1), ContactKind.Barricade, e, mu);
-            Add(new(outer, wall.HeightMetres), new(outer, 0), new(side, 0), ContactKind.Barricade, e, mu);
+            AddWall(BarricadeOffset, wall.HeightMetres, wall.ThicknessMetres, e, mu);
+            var perimeter = settings.OuterBarricade;
+            AddWall(OuterBarricadeOffset, perimeter.HeightMetres, perimeter.ThicknessMetres,
+                perimeter.Restitution ?? e, perimeter.Friction ?? mu);
+
+            void AddWall(double offset, double height, double thickness, double restitution, double friction)
+            {
+                double inner = x + side * offset, outer = inner + side * thickness;
+                Add(new(inner, 0), new(inner, height), new(-side, 0), ContactKind.Barricade, restitution, friction);
+                Add(new(inner, height), new(outer, height), new(0, 1), ContactKind.Barricade, restitution, friction);
+                Add(new(outer, height), new(outer, 0), new(side, 0), ContactKind.Barricade, restitution, friction);
+            }
         }
         Surfaces = surfaces.AsReadOnly();
         void Add(Vec2 a, Vec2 b, Vec2 n, ContactKind kind, double e, double mu) =>
