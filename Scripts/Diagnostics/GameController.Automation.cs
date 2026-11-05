@@ -7,6 +7,7 @@ namespace Cricket2D;
 // Opt-in smoke/capture routines kept separate from the interactive loop.
 public partial class GameController
 {
+    private int _smokePreparationWaitTicks;
     private async void SmokeMenu()
     {
         // Mouse checks need real container layout; headless startup can run physics first.
@@ -51,11 +52,13 @@ public partial class GameController
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         valid &= _hud.DeliveryPanel.Visible && await CheckDeliverySliders();
+        var pending = _practice!.PendingPlan;
+        int seed = _practice.Seed;
         SmokeKey(Key.Escape);
         valid &= _menu.Visible;
         SmokeButton(JoyButton.A);
         SmokeButton(JoyButton.A);
-        valid &= _hud.DeliveryPanel.Visible && !_menu.Visible;
+        valid &= _hud.DeliveryPanel.Visible && !_menu.Visible && _practice.Seed == seed && ReferenceEquals(pending, _practice.PendingPlan);
         _hud.DeliveryPanel.Hide(); // Leave the existing delivery lifecycle smoke at its initial idle state.
         GD.Print(valid ? "SMOKE PASS: main menu, disabled modes, mouse/keyboard/controller navigation, Back, Exit and Practice > Batting." :
             "SMOKE FAIL: main menu navigation.");
@@ -80,17 +83,23 @@ public partial class GameController
 
     private void SmokeTick()
     {
+        if (_smokeTicks is 2 or 904 && !_hud.DeliveryPanel.CanBowl)
+        {
+            if (++_smokePreparationWaitTicks > 1200) { GD.Print("SMOKE FAIL: preparation timed out."); GetTree().Quit(1); }
+            return;
+        }
         _smokeTicks++;
         _smokeReleased |= _simulation.Phase == DeliveryPhase.Live;
         _smokeBounced |= _simulation.FirstBounceX.HasValue;
         if (_smokeTicks == 1)
         {
             _smokeLifecycleValid = !_hud.DeliveryPanel.Visible && _simulation.Phase == DeliveryPhase.Setup;
-            SmokeButton(JoyButton.A);
+            SmokeButton(JoyButton.Back);
             _smokeLifecycleValid &= _hud.DeliveryPanel.Visible && _simulation.Phase == DeliveryPhase.Setup;
         }
         if (_smokeTicks == 3)
         {
+            _smokeLifecycleValid &= ((Button)_hud.DeliveryPanel.FindChild("Bowl", true, false)).HasFocus();
             SmokeButton(JoyButton.A);
             _smokeLifecycleValid &= !_hud.DeliveryPanel.Visible && _simulation.Phase == DeliveryPhase.Windup &&
                 Math.Abs(_simulation.Plan!.Settings.Speed - 32) < 1e-9;
@@ -99,23 +108,28 @@ public partial class GameController
         {
             _smokeLifecycleValid &= _smokeReleased && _smokeBounced && _simulation.Phase == DeliveryPhase.Live &&
                 _simulation.PhaseTime > 5 && !_hud.DeliveryPanel.Visible;
-            SmokeButton(JoyButton.Start);
-            _smokeLifecycleValid &= !_hud.DeliveryPanel.Visible;
             double time = _simulation.PhaseTime;
+            SmokeButton(JoyButton.Start);
+            _smokeLifecycleValid &= _userPaused && _paused && !_hud.DeliveryPanel.Visible;
             _smokeTest = false; // Exercise the normal focus/power policy, then restore automation.
             SetFocusPaused(true);
             _PhysicsProcess(SimulationSettings.Tick);
             _smokeLifecycleValid &= Engine.MaxFps == 30 && _ground.InterpolationPaused && _simulation.PhaseTime == time;
             SetFocusPaused(false);
-            _smokeLifecycleValid &= Engine.MaxFps == 120 && !_ground.InterpolationPaused;
+            _PhysicsProcess(SimulationSettings.Tick);
+            _smokeLifecycleValid &= Engine.MaxFps == 0 && _ground.InterpolationPaused && _simulation.PhaseTime == time;
+            SmokeButton(JoyButton.Start);
+            _smokeLifecycleValid &= !_paused && !_userPaused && !_ground.InterpolationPaused;
+            SmokeButton(JoyButton.A); SmokeButton(JoyButton.B); SmokeButton(JoyButton.X); SmokeButton(JoyButton.Y);
+            _smokeLifecycleValid &= !_menu.Visible && !_hud.DeliveryPanel.Visible && _simulation.PhaseTime == time;
             _smokeTest = true;
-            SmokeButton(JoyButton.B);
+            SmokeKey(Key.Escape);
             _PhysicsProcess(SimulationSettings.Tick);
             _smokeLifecycleValid &= _menu.Visible && _simulation.PhaseTime == time;
             SmokeButton(JoyButton.A);
             SmokeButton(JoyButton.A);
             _smokeLifecycleValid &= !_menu.Visible && _simulation.PhaseTime == time && !_hud.DeliveryPanel.Visible;
-            GD.Print($"SMOKE waiting for A: phase={_simulation.Phase}, time={_simulation.PhaseTime:0.00} s, modal={_hud.DeliveryPanel.Visible}");
+            GD.Print($"SMOKE waiting for setup: phase={_simulation.Phase}, time={_simulation.PhaseTime:0.00} s, modal={_hud.DeliveryPanel.Visible}");
         }
         if (_smokeTicks == 901)
         {
@@ -126,11 +140,12 @@ public partial class GameController
         }
         if (_smokeTicks == 903)
         {
-            SmokeButton(JoyButton.DpadDown); // Pitch length is first; release speed is second.
+            ((HSlider)_hud.DeliveryPanel.FindChild("ReleaseSpeedSlider", true, false)).GrabFocus();
             SmokeButton(JoyButton.DpadRight);
         }
         if (_smokeTicks == 905)
         {
+            ((Button)_hud.DeliveryPanel.FindChild("Bowl", true, false)).GrabFocus();
             SmokeKey(Key.Enter);
         }
         if (_smokeTicks == 907)
@@ -141,7 +156,7 @@ public partial class GameController
                 Math.Abs(_simulation.Plan!.Settings.Speed - SpeedUnits.ToMetresPerSecond(115.3)) < 1e-9 &&
                 _simulation.Statistics.MaxSpeed == 0 && _simulation.Statistics.MaxHeight == 0;
             GD.Print($"SMOKE next delivery: phase={_simulation.Phase}, release={SpeedUnits.ToKilometresPerHour(_simulation.Plan!.Settings.Speed):0.0} km/h, modal={_hud.DeliveryPanel.Visible}");
-            GD.Print(valid ? "SMOKE PASS: A/Enter settings, B/Escape menu, focus pause/30/120 FPS, no timed reset, km/h entry, retained/reset maxima, second delivery." : "SMOKE FAIL: delivery lifecycle or controller menu.");
+            GD.Print(valid ? "SMOKE PASS: View/Enter settings, face buttons reserved for shots, Start pause survives focus changes, Escape menu, km/h and second delivery." : "SMOKE FAIL: delivery lifecycle or controller menu.");
             GD.Print($"Controller devices detected: {Godot.Input.GetConnectedJoypads().Count}");
             GetTree().Quit(valid ? 0 : 1);
         }
@@ -167,160 +182,107 @@ public partial class GameController
         }
     }
 
-    private async System.Threading.Tasks.Task<bool> CheckDeliverySliders()
-    {
-        var panel = _hud.DeliveryPanel;
-        var length = (PitchLengthSlider)panel.FindChild("PitchLengthSlider", true, false);
-        var speed = (HSlider)panel.FindChild("ReleaseSpeedSlider", true, false);
-        var height = (HSlider)panel.FindChild("ReleaseHeightSlider", true, false);
-        DeliverySettings? lastChange = null;
-        void Changed(DeliverySettings values) => lastChange = values;
-        panel.SettingsChanged += Changed;
-        bool valid = panel.FindChildren("*", "SpinBox", true, false).Count == 0 &&
-            panel.FindChildren("*", "LineEdit", true, false).Count == 0;
-        float zero = length.XForMetres(0), maximum = length.XForMetres(25), wicket = length.XForMetres(PitchDimensions.WicketSeparation);
-        valid &= Math.Abs((zero - wicket) / (zero - maximum) - PitchDimensions.WicketSeparation / 25) < 1e-6;
-        foreach (double value in new[] { 8.0, 16, 20.12, 25 })
-        {
-            DragLength(value);
-            valid &= Math.Abs(panel.Values.PitchingLength - value) < 1e-8 && lastChange == panel.Values;
-        }
-        DragLength(0);
-        valid &= length.Value == 8;
-        DragLength(23.45);
-        SmokeButton(JoyButton.DpadLeft);
-        valid &= Math.Abs(length.Value - 23.55) < 1e-8;
-        SmokeButton(JoyButton.DpadRight);
-        valid &= Math.Abs(length.Value - 23.45) < 1e-8;
-        SmokeKey(Key.Left);
-        valid &= Math.Abs(length.Value - 23.55) < 1e-8;
-        SmokeKey(Key.Right);
-        valid &= Math.Abs(length.Value - 23.45) < 1e-8;
-        foreach (double value in new[] { 18.0, 115.2, 180 })
-        {
-            DragSlider(speed, value);
-            valid &= Math.Abs(panel.Values.Speed - SpeedUnits.ToMetresPerSecond(value)) < 1e-8 && lastChange == panel.Values;
-            valid &= ((Label)panel.FindChild("ReleaseSpeedSliderValue", true, false)).Text == $"{value:0.0} km/h";
-        }
-        SmokeButton(JoyButton.DpadRight);
-        valid &= speed.Value == 180;
-        foreach (double value in new[] { 1.53, 2.15, 2.16 })
-        {
-            DragSlider(height, value);
-            valid &= Math.Abs(panel.Values.ReleaseHeight - value) < 1e-8 && lastChange == panel.Values;
-            valid &= ((Label)panel.FindChild("ReleaseHeightSliderValue", true, false)).Text == $"{value:0.00} m";
-        }
-        SmokeButton(JoyButton.DpadRight);
-        valid &= Math.Abs(height.Value - 2.16) < 1e-8;
-        // Restore the normal delivery and verify keyboard/controller focus follows each box.
-        length.Value = 16; speed.Value = 115.2; height.Value = 2.15;
-        length.GrabFocus();
-        SmokeKey(Key.Down);
-        valid &= speed.HasFocus();
-        SmokeKey(Key.Right);
-        valid &= Math.Abs(speed.Value - 115.3) < 1e-8;
-        SmokeKey(Key.Left);
-        SmokeKey(Key.Tab);
-        valid &= height.HasFocus();
-        SmokeKey(Key.Left);
-        valid &= Math.Abs(height.Value - 2.14) < 1e-8;
-        SmokeKey(Key.Right);
-        SmokeKey(Key.Tab);
-        valid &= length.HasFocus();
-        SmokeButton(JoyButton.DpadDown);
-        valid &= speed.HasFocus();
-        SmokeButton(JoyButton.DpadRight);
-        valid &= Math.Abs(speed.Value - 115.3) < 1e-8;
-        SmokeButton(JoyButton.DpadLeft);
-        SmokeButton(JoyButton.DpadDown);
-        valid &= height.HasFocus();
-        SmokeButton(JoyButton.DpadLeft);
-        valid &= Math.Abs(height.Value - 2.14) < 1e-8;
-        SmokeButton(JoyButton.DpadRight);
-        SmokeButton(JoyButton.DpadDown);
-        valid &= length.HasFocus() && Math.Abs(panel.Values.Speed - 32) < 1e-8 &&
-            Math.Abs(panel.Values.ReleaseHeight - 2.15) < 1e-8;
-        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        valid &= panel.GetGlobalRect().Encloses(length.GetGlobalRect()) &&
-            panel.GetGlobalRect().Encloses(height.GetGlobalRect());
-        panel.SettingsChanged -= Changed;
-        GD.Print(valid ? "SMOKE PASS: three boxed sliders, scaled wickets, mouse drag/bounds, live values, keyboard/controller adjustments." :
-            "SMOKE FAIL: delivery sliders or keyboard/controller navigation.");
-        return valid;
-
-        void DragLength(double value) => Drag(length, new(length.XForMetres(length.Value), 72), new(length.XForMetres(value), 72));
-        void DragSlider(HSlider slider, double value)
-        {
-            float thumbWidth = slider.GetThemeIcon("grabber").GetWidth();
-            Vector2 Point(double v) => new(thumbWidth / 2 + (float)((v - slider.MinValue) /
-                (slider.MaxValue - slider.MinValue)) * (slider.Size.X - thumbWidth), slider.Size.Y / 2);
-            Drag(slider, Point(slider.Value), Point(value));
-        }
-        void Drag(Control slider, Vector2 from, Vector2 to)
-        {
-            Vector2 start = slider.GlobalPosition + from, end = slider.GlobalPosition + to;
-            GetViewport().PushInput(new InputEventMouseMotion { Position = start, GlobalPosition = start }, true);
-            GetViewport().PushInput(new InputEventMouseButton { Position = start, GlobalPosition = start,
-                ButtonIndex = MouseButton.Left, ButtonMask = MouseButtonMask.Left, Pressed = true }, true);
-            GetViewport().PushInput(new InputEventMouseMotion { Position = end, GlobalPosition = end, ButtonMask = MouseButtonMask.Left }, true);
-            GetViewport().PushInput(new InputEventMouseButton { Position = end, GlobalPosition = end,
-                ButtonIndex = MouseButton.Left, Pressed = false }, true);
-        }
-    }
-
     private bool CheckControllerAxes()
     {
-        void Axis(JoyAxis axis, float value)
+        void Axis(JoyAxis axis,float value)
         {
-            Godot.Input.ParseInputEvent(new InputEventJoypadMotion { Device = 0, Axis = axis, AxisValue = value });
+            Godot.Input.ParseInputEvent(new InputEventJoypadMotion { Device=0,Axis=axis,AxisValue=value });
             Godot.Input.FlushBufferedEvents();
         }
-        Axis(JoyAxis.RightX, 1);
-        bool valid = BattingControls.Read().RightX > .9;
-        Axis(JoyAxis.RightX, -1);
-        valid &= BattingControls.Read().RightX < -.9;
-        Axis(JoyAxis.RightX, 0);
-        Axis(JoyAxis.LeftX, 1);
-        valid &= BattingControls.Read().LeftX > .9;
-        Axis(JoyAxis.LeftX, 0);
-        Axis(JoyAxis.RightY, 1);
-        valid &= BattingControls.Read().RightY > .9;
-        Axis(JoyAxis.RightY, 0);
-        Axis(JoyAxis.LeftY, -1);
-        valid &= BattingControls.Read().LeftY < -.9;
-        Axis(JoyAxis.LeftY, 0);
-        foreach (double degrees in new[] { 0.0, 45, 90, 135, 180, 225, 270, 315 })
+        void Hold(JoyButton button,bool pressed)
         {
-            float x = (float)Math.Sin(degrees * Math.PI / 180), y = -(float)Math.Cos(degrees * Math.PI / 180);
-            Axis(JoyAxis.LeftX, x); Axis(JoyAxis.LeftY, y);
-            Axis(JoyAxis.RightX, x); Axis(JoyAxis.RightY, y);
-            var input = BattingControls.Read();
-            valid &= Math.Abs(input.LeftX - x) < .001 && Math.Abs(input.LeftY - y) < .001 &&
-                Math.Abs(input.RightX - x) < .001 && Math.Abs(input.RightY - y) < .001;
+            Godot.Input.ParseInputEvent(new InputEventJoypadButton { Device=0,ButtonIndex=button,Pressed=pressed });
+            Godot.Input.FlushBufferedEvents();
         }
-        Axis(JoyAxis.LeftX, 1); Axis(JoyAxis.LeftY, 0);
-        Axis(JoyAxis.RightX, 0); Axis(JoyAxis.RightY, 0);
-        var rig = new BattingRig(_simulation.Settings, _simulation.Batting);
-        for (int i = 0; i < 960; i++) rig.Step(BattingControls.Read(), 1.0 / 960, _simulation.Settings);
-        var hands = rig.Pose.Hands;
-        var shoulder = rig.ShoulderAngle;
-        Axis(JoyAxis.RightY, -1);
-        for (int i = 0; i < 960; i++) rig.Step(BattingControls.Read(), 1.0 / 960, _simulation.Settings);
-        valid &= Math.Abs(rig.ShoulderAngle - shoulder) < 1e-6 && (rig.Pose.Hands - hands).Length < 1e-6 &&
-            rig.WristAngleDegrees < -30 && Math.Abs(rig.SwingClockDegrees - 90) < .001;
-        Axis(JoyAxis.RightY, 0); Axis(JoyAxis.LeftX, -1);
-        rig = new BattingRig(_simulation.Settings, _simulation.Batting);
-        for (int i = 0; i < 960; i++) rig.Step(BattingControls.Read(), 1.0 / 960, _simulation.Settings);
-        valid &= Math.Abs(rig.SwingClockDegrees - 240) < .001 && !rig.IsSnapping;
-        Axis(JoyAxis.LeftX, 0); Axis(JoyAxis.LeftY, -1);
-        for (int i = 0; i < 2400 && !rig.IsSnapping; i++) rig.Step(BattingControls.Read(), 1.0 / 960, _simulation.Settings);
-        valid &= rig.IsSnapping && Math.Abs(rig.SwingClockDegrees) < .001;
-        Axis(JoyAxis.LeftY, 0); Axis(JoyAxis.LeftX, 1);
-        for (int i = 0; i < 200 && rig.IsSnapping; i++) rig.Step(BattingControls.Read(), 1.0 / 960, _simulation.Settings);
-        valid &= !rig.IsSnapping && Math.Abs(rig.SwingClockDegrees - 240) < .001;
-        Axis(JoyAxis.LeftX, 0);
-        GD.Print(valid ? "SMOKE PASS: both stick circles, independent wrist, 12-to-8 snap and reverse stop." : "SMOKE FAIL: controller axes, wrist pivot or swing boundaries.");
+        bool valid=true;
+        Axis(JoyAxis.RightX,1);Axis(JoyAxis.RightY,-1);
+        valid &= BattingControls.Read().RightX==0 && BattingControls.Read().RightY==0;
+        Axis(JoyAxis.RightX,0);Axis(JoyAxis.RightY,0);
+        foreach(var (button,shot) in new[]{(JoyButton.X,ShotStyle.Defence),(JoyButton.A,ShotStyle.FullDrive),
+            (JoyButton.B,ShotStyle.Push),(JoyButton.Y,ShotStyle.HighFinish)})
+        {
+            Hold(button,true);
+            valid &= BattingControls.Read().Shot==shot && !_menu.Visible && !_hud.DeliveryPanel.Visible;
+            var rig=new BattingRig(_simulation.Settings,_simulation.Batting);
+            rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
+            valid &= rig.Frame.Shot==shot;
+            Axis(JoyAxis.LeftX,1);Axis(JoyAxis.LeftY,0);
+            for(int i=0;i<120;i++)rig.Step(BattingControls.Read(),1.0/120,_settings);
+            valid &= rig.Frame.SwingProgress==0;
+            Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
+            rig.Step(BattingControls.Read(),1.0/120,_settings);
+            for(int i=0;i<=SwingGesture.StartClockDegrees;i++)
+            {
+                double angle=(SwingGesture.StartClockDegrees-i)*Math.PI/180;
+                Axis(JoyAxis.LeftX,(float)Math.Sin(angle));Axis(JoyAxis.LeftY,-(float)Math.Cos(angle));
+                rig.Step(BattingControls.Read(),1.0/120,_settings);
+                if(i>=7)
+                {
+                    double stop=shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0;
+                    valid &= Math.Abs(rig.SwingClockDegrees-Math.Max(stop,SwingGesture.StartClockDegrees-i))<.001;
+                }
+            }
+            for(int i=0;i<180;i++)rig.Step(BattingControls.Read(),1.0/120,_settings);
+            valid &= Math.Abs(rig.SwingClockDegrees-(shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0))<.001 && rig.Frame.Shot==shot;
+            Hold(button,false);
+        }
+        Axis(JoyAxis.TriggerRight,.5f);Axis(JoyAxis.TriggerLeft,.25f);
+        valid &= Math.Abs(BattingControls.Read().FrontWeight-.5)<.001 && Math.Abs(BattingControls.Read().BackWeight-.25)<.001;
+        Axis(JoyAxis.TriggerRight,0);Axis(JoyAxis.TriggerLeft,0);
+        var rehearsal=new Simulation(_settings,_batting);
+        foreach(double clock in new[]{315.0,300,285,270,255,243,210,180}) Rehearse(clock);
+        valid &= Math.Abs(rehearsal.Batter.SwingClockDegrees-180)<.001;
+        Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
+        rehearsal.Tick(BattingControls.Read());
+        foreach(double clock in new[]{255.0,243,210,180}) Rehearse(clock);
+        valid &= Math.Abs(rehearsal.Batter.SwingClockDegrees-180)<.001 && rehearsal.Phase==DeliveryPhase.Setup;
+        Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
+        rehearsal.Tick(BattingControls.Read());
+        for(int travel=0;travel<=975;travel+=3)
+        {
+            double clock=ClockCurve.Wrap(255-travel);
+            Rehearse(clock);
+            if(clock==180) valid &= Math.Abs(rehearsal.Batter.SwingClockDegrees-180)<.001;
+        }
+        // Change buttons on a held stick, including at the end of the arc. No release/re-arm is allowed.
+        Rehearse(45);
+        foreach(double clock in new[]{90.0,60,30,0})
+        {
+            Rehearse(clock);
+            foreach(var (button,shot) in new[]{(JoyButton.X,ShotStyle.Defence),(JoyButton.B,ShotStyle.Push),
+                (JoyButton.Y,ShotStyle.HighFinish),(JoyButton.A,ShotStyle.FullDrive)})
+            {
+                Hold(button,true);
+                Rehearse(clock);
+                double stop=shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0;
+                valid &= rehearsal.Batter.Frame.Shot==shot && !rehearsal.Batter.BeganStroke &&
+                    Math.Abs(rehearsal.Batter.SwingClockDegrees-Math.Max(stop,clock))<.001;
+                if(shot==ShotStyle.HighFinish)
+                {
+                    double bladeClock=clock>=60?clock:90-clock/2;
+                    double expectedAngle=(bladeClock-270)*Math.PI/180;
+                    valid &= Math.Abs(rehearsal.Batter.Pose.Bat.Angle-expectedAngle)<.0001;
+                }
+                Hold(button,false);
+                Rehearse(clock);
+                valid &= rehearsal.Batter.Frame.Shot==ShotStyle.FullDrive &&
+                    Math.Abs(rehearsal.Batter.SwingClockDegrees-clock)<.001;
+            }
+        }
+        Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
+        Hold(JoyButton.Y,true);
+        rehearsal.Tick(BattingControls.Read());
+        valid &= rehearsal.Batter.Frame.Shot==ShotStyle.HighFinish && !rehearsal.Batter.GestureEngaged;
+        Hold(JoyButton.Y,false);
+        GD.Print(valid?"SMOKE PASS: 8:30 clock tracking, live mode changes, Y blade 2-to-3, re-arming and triggers.":"SMOKE FAIL: batting input or shot mapping.");
         return valid;
+
+        void Rehearse(double clock)
+        {
+            double angle=clock*Math.PI/180;
+            Axis(JoyAxis.LeftX,(float)Math.Sin(angle));Axis(JoyAxis.LeftY,-(float)Math.Cos(angle));
+            rehearsal.Tick(BattingControls.Read());
+        }
     }
 
     private void SaveCapture(string path)
@@ -344,23 +306,34 @@ public partial class GameController
         StartBatting();
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         SaveCapture("res://artifacts/idle.png");
-        foreach (var (name, clock, wristClock) in new (string, double, double?)[]
+        foreach(ShotStyle shot in Enum.GetValues<ShotStyle>())
         {
-            ("batting-8", 240, null), ("batting-6", 180, null), ("batting-3", 90, null),
-            ("batting-1", 30, null), ("batting-wrist", 90, 30), ("batting-follow-through", 5, null)
-        })
-        {
-            double angle = clock * Math.PI / 180, wrist = (wristClock ?? 0) * Math.PI / 180;
-            var input = new BattingInput(Math.Sin(angle), -Math.Cos(angle),
-                wristClock.HasValue ? Math.Sin(wrist) : 0, wristClock.HasValue ? -Math.Cos(wrist) : 0);
-            for (int i = 0; i < 1600; i++) _simulation.Batter.Step(input, 1.0 / 960, _simulation.Settings);
-            await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
-            SaveCapture($"res://artifacts/{name}.png");
+            for(int i=0;i<240;i++)_simulation.Batter.Step(default,1.0/120,_settings);
+            for(int i=0;i<=SwingGesture.StartClockDegrees;i++)
+            {
+                double angle=(SwingGesture.StartClockDegrees-i)*Math.PI/180;
+                _simulation.Batter.Step(new(Math.Sin(angle),-Math.Cos(angle),0,0,Shot:shot),1.0/120,_settings);
+            }
+            await ToSignal(RenderingServer.Singleton,RenderingServer.SignalName.FramePostDraw);
+            SaveCapture($"res://artifacts/batting-{shot}.png");
         }
         OpenSetup();
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         SaveCapture("res://artifacts/setup.png");
+        var bowler = (OptionButton)_hud.DeliveryPanel.FindChild("BowlerSelector", true, false);
+        bowler.ShowPopup(); bowler.GetPopup().SetFocusedItem(bowler.Selected);
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/setup-bowler.png");
+        _hud.DeliveryPanel.CloseBowlerList();
+        _hud.DeliveryPanel.SetSettings(_hud.DeliveryPanel.Settings.WithManualSpeed(115.2) with { RandomPitchLength = false, RandomSpeed = false });
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/setup-manual.png");
+        var manualHeight = (HSlider)_hud.DeliveryPanel.FindChild("ReleaseHeightSlider", true, false);
+        manualHeight.GrabFocus();
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/setup-manual-scrolled.png");
         var length = (PitchLengthSlider)_hud.DeliveryPanel.FindChild("PitchLengthSlider", true, false);
+        length.GrabFocus();
         foreach (double metres in new[] { 20.12, 25 })
         {
             length.Value = metres;
@@ -368,7 +341,17 @@ public partial class GameController
             SaveCapture($"res://artifacts/setup-length-{metres:0.00}.png");
         }
         length.Value = 16;
-        Begin(_hud.DeliveryPanel.Values);
+        if (!await WaitForDelivery()) { GD.PushError("Capture delivery preparation timed out."); GetTree().Quit(1); return; }
+        _hud.DeliveryPanel.Hide();
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/practice-guides-on.png");
+        var pitchGuide = (CheckBox)_hud.DeliveryPanel.FindChild("ShowPitchPosition", true, false);
+        var trajectoryGuide = (CheckBox)_hud.DeliveryPanel.FindChild("ShowPredictedTrajectory", true, false);
+        pitchGuide.ButtonPressed = false; trajectoryGuide.ButtonPressed = false;
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/practice-guides-off.png");
+        pitchGuide.ButtonPressed = true; trajectoryGuide.ButtonPressed = true;
+        Begin();
         for (int i = 0; i < 260; i++) _simulation.Tick(default);
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         SaveCapture("res://artifacts/ground.png");

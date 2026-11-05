@@ -16,13 +16,25 @@ If Godot has moved:
 
 You can also set `GODOT4` to the Godot executable. `Play.cmd` uses a process-local PowerShell execution-policy override; it does not change the machine's execution policy. The launcher does not install applications or require administrator access. The initial build needs a .NET 10 SDK, selected by `global.json`. Dependency packages and build outputs stay in this repository's ignored directories. Godot uses its ordinary Windows user-profile cache directories.
 
-Rendering is capped at **120 FPS while focused** and **30 FPS while unfocused**, with VSync enabled. Use `.\tools\Run.ps1 -FourK` for fullscreen 4K, or `-PerformanceTest` for an automated rendered benchmark. The [performance audit](docs/PERFORMANCE.md) records the measured improvements, hardware, regression checks and limitations.
+Focused rendering has **no engine FPS cap**, with VSync enabled. Focus loss pauses play and limits background rendering to **30 FPS**. Use `.\tools\Run.ps1 -FourK` for fullscreen 4K, or `-PerformanceTest` for an automated rendered benchmark. The [performance audit](docs/PERFORMANCE.md) records the measured improvements, hardware, regression checks and limitations.
 
 ## Delivery setup
 
 The game opens on the **Main Menu** with **Play Match** (disabled), **Practice**, **Settings** (disabled) and **Exit**. Select **Practice → Batting** to enter the existing batting gameplay; **Bowling** is disabled. Menus support mouse clicks, the left stick, arrow keys/D-pad, Enter/A to select, and Escape/B to go back from Practice. Selected items use a charcoal fill and soft ivory text; the remaining UI uses soft ivory panels and warm grey text.
 
-Batting starts on the idle field. Press **A / Enter** to open **Batting Practice Settings**. Press **B / Escape** to return to the main menu and pause the session; selecting Practice → Batting again resumes it. The top-right Menu/A buttons and popup Begin button have been removed.
+Batting starts on the idle field. Press **View / Select / Enter** to open **Batting Practice Settings**. **Bowl** sits at the top and is focused by default, remaining disabled until preparation finishes. Inside the popup, A/Enter activates the focused selector, checkbox or Bowl button. Only Bowl starts a delivery. Inside setup, **B / Escape** closes the bowler list or returns to the main menu. During play, **Menu / Start** pauses and **Escape** opens the main menu; A/B are reserved for shots. Selecting Practice → Batting again resumes the same session and pending delivery.
+
+Choose a bowler at the top of the popup. **Medium** is selected initially, with both random options enabled:
+
+| Bowler | Random release speed |
+| --- | ---: |
+| Super Slow | 18–49.9 km/h |
+| Slow | 50–80 km/h |
+| Medium | 80.1–110 km/h |
+| Fast | 110.1–130 km/h |
+| Super Fast | 130.1–180 km/h |
+
+**Random pitch length** samples 8–25 m; uncheck it to reveal the existing scaled pitch slider. **Random release speed** shows the selected bowler's range; uncheck it for a manual 18–180 km/h slider. Changing manual speed automatically selects its bowler category. Explicitly choosing a category clamps the remembered manual speed to that category's nearest limit. Release height is always manual. Initial manual values are 16 m, 95 km/h and 2.15 m.
 
 | Setting | Meaning | Supported range |
 | --- | --- | --- |
@@ -30,11 +42,13 @@ Batting starts on the idle field. Press **A / Enter** to open **Batting Practice
 | Pitching length | First ground contact, measured **from the bowler-end wicket** toward the striker | 8–25 m |
 | Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.16 m (153–216 cm) |
 
-Pitch length, release speed and release height each have a slider in their own unnumbered box, with live values instead of text inputs. The pitch diagram stays at the top and uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Drag with the mouse or adjust with left/right arrows or the D-pad. Up/down and Tab cycle through the three settings.
+Settings retain their unnumbered boxes and live value badges. The pitch diagram uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Use mouse drag, arrows, D-pad or the left stick. Up/down and Tab/Shift+Tab navigate visible controls; hidden sliders are skipped. The body scrolls when expanded, while Bowl and delivery status stay visible.
 
-With the panel open, press **A / Enter** to begin. The automated bowler winds up for 1.25 s, then releases the ball. You can move the bat during the windup. There is **no timed reset**: the ball continues naturally until you press **A / Enter** for the next delivery settings. Opening settings and beginning a delivery require separate presses. Opening settings retains the previous delivery's maxima; beginning a delivery clears them. **B / Escape** returns to the main menu from either settings or play. Leaving the window pauses the simulation.
+Activate **Bowl** when preparation is complete. The automated bowler winds up for 1.25 s, then releases the ball. You can move the bat during the windup. There is **no timed reset**: the ball continues until you press **A / Enter** for the next delivery settings. Each new ball gets a new random seed; reopening an unbowled setup or returning from the main menu keeps the pending ball. Opening settings retains the previous delivery's maxima; bowling clears them. Leaving the window pauses the simulation. Practice choices last for the current game session and are not written to disk.
 
-The bowler calculates a launch angle using the same aerodynamic integrator as the live ball. It selects the lower reachable trajectory and rejects impossible combinations. Length describes the unimpeded first pitch and can extend beyond the striker's wicket: a bat or wicket interception can prevent the ball reaching that point. Release height can be adjusted in 0.01 m increments, including both endpoints.
+**Show pitch position** and **Show predicted bowling trajectory** default on and are independent. Turning off the position guide hides the marker throughout the delivery. The predicted path appears only before release. Neither checkbox rerolls the ball. The actual live ball trail has its own **T** shortcut and is enabled initially; T does not change either prediction guide. Random settings display ranges rather than the sampled values.
+
+The bowler calculates a launch angle using the same aerodynamic integrator as the live ball. A cancellable worker prepares the exact plan later used for bowling. Random values are sampled uniformly at 0.01 m / 0.1 km/h resolution, including endpoints, then physically unreachable combinations are rejected. Generation retries only randomized fields, at most 64 times, then tries the shortest randomized length and highest randomized speed. Manual values are never changed by this feasibility check. If no permitted combination works, Bowl remains disabled with an actionable error. Very low manual Super Slow speeds cannot reach even 8 m with the current physics. Length describes the unimpeded first pitch; bat or wicket interception can prevent that landing. Release height uses 0.01 m increments, including both endpoints.
 
 The release is at x = 1.2192 m, on the bowler's popping crease. The length setting still uses x = 0 at the wicket, so a length of 16 m means 14.7808 m horizontally from release. Both wickets remain visible, **exactly 20.12 m apart**. The **batter is on the left** and the **bowler is on the right** in the initial view.
 
@@ -56,21 +70,25 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 
 | Action | Controller | Keyboard |
 | --- | --- | --- |
-| Aim the full shoulder swing | Left stick, rotate through 360 degrees | WASD (diagonals supported) |
-| Aim the blade about the fist | Right stick, constrained by current swing angle | Arrow keys (diagonals supported) |
-| Select setup field | D-pad up / down | Up / down, Tab / Shift+Tab, or click |
-| Change setup value | D-pad left / right | Left / right arrows or drag the slider |
-| Begin from settings | A / south button | Enter |
-| Open / return to settings | A / south button | Enter |
-| Toggle trajectory | — | T |
-| Full screen | — | F11 |
-| Main menu (pauses batting) | B / east button | Escape |
+| Swing | Rotate left stick counterclockwise: 8:30 → 6 → 3 → 12 | Overlapping WASD directions |
+| X: stop at 2; vertical bat face | Hold X at any point | J |
+| A: aligned arm/blade, 8:30 to 12 (default) | No button or hold A | No modifier or K |
+| B: arms stop at 1:30; blade points at 4 | Hold B at any point | L |
+| Y: follows A to 2, then blade turns toward 3 as arms reach 12 | Hold Y at any point | I |
+| Front / back weight | R2 / L2, progressive | E / Q |
+| Pause / resume | Menu / Start | Space outside setup controls |
+| Open / return to delivery settings | View / Select | Enter |
+| Navigate setup | D-pad | Arrows, Tab or mouse |
+| Activate setup control (Bowl starts delivery) | A | Enter / Space |
+| Back within setup/menu | B | Escape |
+| Main menu during play | View, then B | Escape |
+| Toggle ball trail / full screen | — | T / F11 |
 
-Start at the default **115.2 km/h, 16 m, 2.15 m**. The left stick points the shoulder-to-fist direction on the screen clock. Rotate counterclockwise from **8 through 6 toward 1** for the straight-arm hitting arc. The swing accelerates from 8 to 7, peaks through 7 to 2, slows from 2 to 12, then commits to a fast return from **12 to 8**. Before reaching 12, you can reverse through the same arc, with a hard stop at **8**. Backlift speed is capped at 240 degrees/s and 30% of the local forward limit, with slower acceleration. Reversing cannot enter the snap-only arc. Once the arm reaches 12, the return cannot be reversed or cancelled.
+Start the stick beyond 60% radius near 8:30, then rotate through 6 and 3. A direct push, centre crossing or small movement cannot start a swing. After the initial 6° gate, the arm clock matches the stick on the current physics tick with no animation easing or speed limiter. Holding stops immediately; reversing reverses the stroke. Centre the stick to recover toward 8:30. A fresh deliberate rotation can interrupt that recovery immediately; an off-angle push no longer blocks later entry into the start area. Consecutive full rotations also start consecutive strokes without requiring a centre release. Change the held mode button before, during or after the swing; it applies at the current stick position without re-arming. Releasing modifiers returns to A. Free swings also work before bowling, while the delivery panel is closed. No button is A.
 
-The right stick points the blade about the fist, within limits determined by the current shoulder angle. It never moves the shoulder or hands. With the right stick centred, the arms and bat stay straight from 8 to 1. Partial right-stick deflection makes a smaller wrist adjustment. Releasing the right stick eases the bat back to its neutral angle; releasing the left stick retains the last swing target. After the snap, continue rotating through 8 or release the left stick to start another swing. Holding the follow-through position does not trigger repeated swings.
+The right stick is inactive for now. R2 progressively shifts weight forward and lowers the rear knee; L2 moves support backward. Opposing trigger pressures cancel. See [the batting guide](docs/BATTING.md) for gesture tuning, preview controls and the Blender workflow.
 
-Controller bindings use Godot's standard gamepad mappings with separately configurable radial dead zones (0.18 by default) and support connection during play. Synthetic controller circles and delivery menu events are covered by runtime checks. Physical controller feel still needs hands-on play testing.
+Start with the default Medium bowler. For repeatable deliveries, disable random speed/length and use **95 km/h, 16 m, 2.15 m**. Controller events are covered by synthetic native checks; physical-controller feel still needs hands-on testing.
 
 ## Implemented physics and animation
 
@@ -80,71 +98,7 @@ Controller bindings use Godot's standard gamepad mappings with separately config
 - Pitch restitution, Coulomb friction, ball angular inertia, slipping-to-rolling transition and rolling resistance. Passive ground contact dissipates energy.
 - Swept ball-versus-moving-capsule contact detection for the bat. Impulses depend on the bat contact-point velocity, finite effective mass, rotational lever arm and friction.
 - Bat and wicket contacts; an always-visible, invulnerable batter; a trajectory trail and persistent per-delivery speed, distance and height maxima.
-- Fixed-length arms and legs, straight arms through the hitting arc, a full shoulder circle with phase-specific speed limits, independent wrist rotation, two-link IK, an automatic front-foot step, planted rear-toe pivot, head compensation and configurable weight transfer.
+- Blender-built skinned cricketer with separate grips, direct clock-angle modes, proportional trigger footwork, planted toe pivots, pelvis/spine/chest/head articulation and fixed-length limb IK. The same physical bat transform drives rendering and collisions.
 - Procedural field presentation with a configurable oval wedge, inner and outer barricades, stepped stadium seating, a static spectator crowd and an Inkscape daylight sky. Physical objects retain a shared metre scale; scenery depth uses perspective that matches the ball plane at each boundary crossing. Five compact stats and a minimum drawn ball radius keep gameplay readable during camera zoom.
 
-Tune the batsman in [`Config/batsman.json`](Config/batsman.json): separate `Input`, `Swing`, `Wrist`, `Arms`, `Stance`, `BodyMotion`, `Footwork` and `HeadMotion` objects control stick response, speed phases, the snap, angle limits and body movement. Edit the JSON and restart the game, or reload it in the batting preview; no code rebuild is needed. [`docs/BATTING.md`](docs/BATTING.md) explains the angle convention, every object and examples. Defaults approximate a cricket swing and remain adjustable for play feel.
-
-The tunable physical coefficients are in [`Config/physics.json`](Config/physics.json). Their units and defaults are documented in [`docs/PHYSICS.md`](docs/PHYSICS.md). [`docs/CRICKET_REFERENCES.md`](docs/CRICKET_REFERENCES.md) links the published bat mass/inertia, tip-speed and impact references and explains the conversions and remaining tuning assumptions.
-
-## Code layout
-
-For close-up animation tuning, run:
-
-```powershell
-.\tools\Run.ps1 -BattingPreview
-```
-
-The preview offers live controls, slow/fast/reverse/snap/wrist demonstrations, looping, pause, single-tick stepping, 25%/50%/100% playback and joint/contact telemetry. **Reload JSON** resets the preview on success or keeps the working configuration and shows an error. It never changes a delivery or writes configuration. See [the tuning guide](docs/BATTING.md#close-up-preview).
-
-The match and preview share the character renderer. Both interpolate pose parameters before rebuilding limbs with IK, preserving bone lengths and the bat's fist pivot.
-
-```text
-Core/                    Engine-independent .NET physics library
-  Physics/               Flight, delivery solver, collision and contact laws
-  Animation/             Batting joints, human pose and IK
-  Statistics/            Per-delivery maxima sampled during physics updates
-  Simulation.cs          Fixed timestep and delivery state machine
-Presentation/            Engine-independent camera helpers and batting preview session
-Scripts/
-  GameController.cs      Connects simulation, input and presentation
-  Input/                 Named keyboard/gamepad actions
-  Presentation/          Ground, characters, HUD and setup panel
-Config/physics.json      Physical coefficients in SI units
-Config/batsman.json      Swing, wrist, arms, stance and stick tuning
-Scenes/Main.tscn         Godot entry point
-Tests/                   Offline executable physics validation
-tools/Run.ps1            Build, test and launch
-```
-
-The core has no dependency on Godot. Rendering cannot modify the ball, and the UI passes only validated delivery settings. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for extension points and deliberate approximations.
-
-## Validation
-
-Build and run the automated checks:
-
-```powershell
-.\tools\Run.ps1 -BuildOnly -Test
-```
-
-Run the core checks independently of Godot:
-
-```powershell
-dotnet run --project Tests/Cricket.Physics.Tests.csproj
-```
-
-Run the actual Godot scene through A-button setup, bowling, bounce, continued play beyond five seconds, manual return to setup and a second delivery:
-
-```powershell
-.\tools\Run.ps1 -Headless -SmokeTest
-```
-
-Tests return a nonzero exit code on failure. They cover analytic vacuum flight, drag, 1,000 random bounce-energy checks, rolling friction, bat impulses, fast swept contacts, 48 launch combinations, invalid/unreachable deliveries, landing accuracy, continued play without a timed reset, retained/reset maxima, km/h conversion, playable swing sequences, bone lengths and determinism at different render rates. Camera checks cover both travel directions, direction changes, high shots, reset, and fixed boundary/height measurements. The Godot smoke test verifies A/Enter and B/Escape parity, mouse/keyboard/stick navigation, disabled choices, all three sliders' dragging/bounds/live values, focus cycling, separate opening/beginning presses, speed conversion from km/h, both stick circles, screen directions, and independent wrist rotation using the loaded batsman configuration.
-
-## Current scope
-
-This is a physically grounded **2D prototype**, with coefficients that still need calibration against measured cricket footage. It does not simulate lateral seam/swing, off-side/leg-side shot placement, muscle dynamics, full body-bat recoil, deformable pitch/ball/bat materials, fielding, scoring, audio or match rules. Wicket movement is a visual hit response. The bowler is an automated target solver with a procedural delivery animation, without tactical decision making. Art is deliberately simple while motion and contact are developed.
-
-The game runs through the installed Godot runtime. A standalone distributable `.exe` has not been exported; that later step needs the matching Godot .NET export templates.
-
-Pitch/equipment references: [MCC pitch dimensions](https://www.lords.org/mcc/the-laws/the-pitch), [MCC wickets](https://www.lords.org/mcc/the-laws/the-wickets), [MCC ball](https://www.lords.org/mcc/the-laws/the-ball). Engine references: [Godot C#](https://docs.godotengine.org/en/stable/tutorials/scripting/c_sharp/c_sharp_basics.html), [Godot controllers](https://docs.godotengine.org/en/stable/tutorials/inputs/controllers_gamepads_joysticks.html).
+Tune the batsman in [`Config/batsman.json`](Config/batsman.json): `Input`, `Swing` and `Body` configure controls and motion. Edit and reload in the batting lab. [`docs/BATTING.md`](docs/BATTING.md) explains the settings, biomechanics sources, limitations and Blender workflow. Open `Art/Batsman/batsman.blend` to inspect the model and seven editable sample actions.

@@ -2,7 +2,9 @@
 
 All core distances are metres, time is seconds, mass is kilograms, velocity is m/s, angular velocity is rad/s, forces are newtons and impulse is N·s. The world origin is the bowler-end wicket at pitch level. The drawing layer starts at approximately 63.22 pixels per metre and automatically reduces the scale to keep the ball and wickets visible. It flips both axes: the bowler is on the right, the batter on the left, and positive height points upward. Visual stump offsets show the three overlapping stumps in a side projection; physics uses one stump capsule at the wicket line. Camera zoom never changes physical quantities.
 
-The setup panel and speed stats display **km/h**. Input is divided by 3.6 before entering the simulation; output is multiplied by 3.6 for display. The default release is 115.2 km/h, equivalent to 32 m/s. The supported range is 18–180 km/h, equivalent to 5–50 m/s.
+The setup panel and speed stats display **km/h**. Input is divided by 3.6 before entering the simulation; output is multiplied by 3.6 for display. Practice defaults to a Medium bowler with randomized speed (80.1–110 km/h) and length (8–25 m), at a manually set 2.15 m height. The remembered manual speed is 95 km/h. The supported manual range remains 18–180 km/h, equivalent to 5–50 m/s. Tests and diagnostics may use a fixed 115.2 km/h (32 m/s) fixture.
+
+Bowler profiles and seeded sampling live in `Core/Practice/PracticeBowling.cs`. They select delivery settings without changing the aerodynamic model or fixed timestep. Candidate plans pass the same solver as manual deliveries; retries and fallback can change only randomized fields. A physically unreachable manual combination remains an error. `Simulation.BeginPrepared` starts the validated preview plan without solving again, rejects plans generated with different physics settings, and shares initialization with the existing `Begin(DeliverySettings)` entry point. Random seeds belong to pending deliveries, never physics or rendering ticks.
 
 ## Geometry
 

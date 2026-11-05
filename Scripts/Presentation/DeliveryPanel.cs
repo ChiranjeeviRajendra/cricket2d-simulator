@@ -1,166 +1,290 @@
 using Cricket.Physics;
+using Cricket2D.Presentation;
 using Godot;
 
 namespace Cricket2D;
 
-/// <summary>A single in-game modal. Keyboard, mouse and controller can all configure a ball.</summary>
+/// <summary>Practice controls; sampling and solving belong to PracticeSession.</summary>
 public partial class DeliveryPanel : Control
 {
-    public event Action<DeliverySettings>? BeginRequested;
-    public event Action<DeliverySettings>? SettingsChanged;
-    public DeliverySettings Values => new(SpeedUnits.ToMetresPerSecond(_speed.Value), _length.Value, _height.Value);
-    private HSlider _speed = null!;
+    public event Action? BeginRequested;
+    public event Action<PracticeBowlingSettings>? SettingsChanged;
+    public event Action<PracticeGuides>? GuidesChanged;
+    public PracticeBowlingSettings Settings { get; private set; } = new();
+    public DeliverySettings Values => Settings.ManualDelivery;
+    public PracticeGuides Guides => new(_pitchGuide.ButtonPressed, _trajectoryGuide.ButtonPressed);
+    public bool CanBowl => !_bowl.Disabled;
+    private OptionButton _bowler = null!;
+    private CheckBox _randomLength = null!, _randomSpeed = null!, _pitchGuide = null!, _trajectoryGuide = null!;
     private PitchLengthSlider _length = null!;
-    private HSlider _height = null!;
-    private Label _error = null!;
-    private readonly List<Godot.Range> _fields = [];
-    private readonly List<PanelContainer> _rows = [];
-    private int _selected;
+    private HSlider _speed = null!, _height = null!;
+    private VBoxContainer _manualLength = null!, _manualSpeed = null!, _content = null!;
+    private Label _lengthRange = null!, _speedRange = null!, _status = null!;
+    private Button _bowl = null!;
     private PanelContainer _card = null!;
+    private ScrollContainer _scroll = null!;
+    private readonly List<(Control Control, PanelContainer? Frame)> _entries = [];
+    private readonly List<Control> _focusOrder = [];
+    private readonly List<PanelContainer> _rows = [];
     private readonly StyleBoxFlat _rowNormal = VisualTheme.Box(Colors.Transparent, VisualTheme.Border, 6, 12);
     private readonly StyleBoxFlat _rowSelected = VisualTheme.Box(Colors.Transparent, VisualTheme.Ink, 6, 12);
+    private bool _changing;
+    private int _stickX, _stickY;
+    private double _repeatX, _repeatY;
 
     public override void _Ready()
     {
         SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        var shade = new ColorRect { Color = new Color(0, 0, 0, 0.82f) };
-        AddChild(shade);
-        shade.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
-        _card = new PanelContainer { CustomMinimumSize = new Vector2(800, 0) };
-        _card.AddThemeStyleboxOverride("panel", VisualTheme.Box(VisualTheme.Panel, VisualTheme.Border, 18, 30));
+        var shade = new ColorRect { Color = new(0, 0, 0, .82f) };
+        AddChild(shade); shade.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        _card = new() { Name = "SettingsCard" };
+        _card.AddThemeStyleboxOverride("panel", VisualTheme.Box(VisualTheme.Panel, VisualTheme.Border, 18, 24));
         AddChild(_card);
-        var stack = new VBoxContainer();
-        stack.AddThemeConstantOverride("separation", 13);
-        _card.AddChild(stack);
-        stack.AddChild(VisualTheme.Label("Batting Practice Settings", 32));
-        var rule = new HSeparator();
-        stack.AddChild(rule);
-        _length = new PitchLengthSlider
+        var stack = new VBoxContainer(); stack.AddThemeConstantOverride("separation", 12); _card.AddChild(stack);
+        stack.AddChild(VisualTheme.Label("Batting Practice Settings", 30)); stack.AddChild(new HSeparator());
+        _bowl = new() { Name = "Bowl", Text = "Bowl", Disabled = true, CustomMinimumSize = new(0, 44) };
+        stack.AddChild(_bowl); Register(_bowl, null); VisualTheme.NavigationButton(_bowl);
+        _bowl.Pressed += () => { if (CanBowl) BeginRequested?.Invoke(); };
+        _scroll = new() { Name = "SettingsScroll", SizeFlagsVertical = SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, FollowFocus = true };
+        stack.AddChild(_scroll);
+        _content = new() { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        _content.AddThemeConstantOverride("separation", 10); _scroll.AddChild(_content);
+
+        var box = Box("Bowler", out var frame);
+        _bowler = new() { Name = "BowlerSelector", CustomMinimumSize = new(0, 40) };
+        foreach (var profile in BowlerProfiles.All) _bowler.AddItem(profile.Name, (int)profile.Type);
+        _bowler.Select((int)Settings.Bowler);
+        box.AddChild(_bowler); Register(_bowler, frame); VisualTheme.NavigationButton(_bowler);
+        _bowler.ItemSelected += index => SetSettings(Settings.WithBowler((BowlerType)index));
+        var popup = _bowler.GetPopup();
+        // The popup owns input while open. Keep its native navigation, and handle
+        // controller activation/back in that window rather than the game viewport.
+        popup.WindowInput += evt =>
         {
-            Name = "PitchLengthSlider", MinValue = DeliverySettings.MinPitchingLength,
-            MaxValue = DeliverySettings.MaxPitchingLength, Step = .01, Value = 16,
-            CustomMinimumSize = new(0, 164)
+            if (!popup.Visible || evt is not InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.A or JoyButton.B }) return;
+            if (evt is InputEventJoypadButton { ButtonIndex: JoyButton.A } && popup.GetFocusedItem() >= 0)
+                SetSettings(Settings.WithBowler((BowlerType)popup.GetFocusedItem()));
+            CloseBowlerList();
+            popup.SetInputAsHandled();
         };
-        Field(stack, "Pitch length", "Distance from the bowler's stumps", _length);
-        _speed = Slider("ReleaseSpeedSlider",
-            SpeedUnits.ToKilometresPerHour(DeliverySettings.MinSpeed),
-            SpeedUnits.ToKilometresPerHour(DeliverySettings.MaxSpeed), 0.1, 115.2);
-        Field(stack, "Release speed", "Kilometres per hour at release", _speed, "0.0", "km/h");
-        _height = Slider("ReleaseHeightSlider",
-            DeliverySettings.MinReleaseHeight, DeliverySettings.MaxReleaseHeight, 0.01, 2.15);
-        Field(stack, "Release height", "Height above the pitch", _height, "0.00", "m");
-        for (int i = 0; i < _fields.Count; i++)
-        {
-            var field = _fields[i];
-            field.FocusNext = field.FocusNeighborBottom = field.GetPathTo(_fields[(i + 1) % _fields.Count]);
-            field.FocusPrevious = field.FocusNeighborTop = field.GetPathTo(_fields[(i + _fields.Count - 1) % _fields.Count]);
-        }
-        _error = VisualTheme.Label("", 14, VisualTheme.Coral);
-        _error.AutowrapMode = TextServer.AutowrapMode.WordSmart;
-        _error.CustomMinimumSize = new Vector2(720, 22);
-        stack.AddChild(_error);
+
+        box = Box("Pitch length", out frame);
+        _randomLength = Check(box, frame, "RandomPitchLength", "Random pitch length");
+        _lengthRange = VisualTheme.Label("8–25 m from the bowler's stumps", 14, VisualTheme.Muted); box.AddChild(_lengthRange);
+        _manualLength = new(); box.AddChild(_manualLength);
+        _length = new() { Name = "PitchLengthSlider", MinValue = DeliverySettings.MinPitchingLength,
+            MaxValue = DeliverySettings.MaxPitchingLength, Step = .01, Value = Settings.ManualLength, CustomMinimumSize = new(0, 164) };
+        _manualLength.AddChild(_length); Register(_length, frame);
+        _length.ValueChanged += value => { if (!_changing) SetSettings(Settings with { ManualLength = value }); };
+        _randomLength.Toggled += value => { if (!_changing) SetSettings(Settings with { RandomPitchLength = value }); };
+
+        box = Box("Release speed", out frame);
+        _randomSpeed = Check(box, frame, "RandomReleaseSpeed", "Random release speed");
+        _speedRange = VisualTheme.Label("", 14, VisualTheme.Muted); box.AddChild(_speedRange);
+        _manualSpeed = new(); box.AddChild(_manualSpeed);
+        _speed = Slider(_manualSpeed, frame, "ReleaseSpeedSlider", 18, 180, .1, Settings.ManualSpeedKph, "0.0", "km/h");
+        _speed.ValueChanged += value => { if (!_changing) SetSettings(Settings.WithManualSpeed(value)); };
+        _randomSpeed.Toggled += value => { if (!_changing) SetSettings(Settings with { RandomSpeed = value }); };
+
+        box = Box("Release height", out frame);
+        _height = Slider(box, frame, "ReleaseHeightSlider", DeliverySettings.MinReleaseHeight,
+            DeliverySettings.MaxReleaseHeight, .01, Settings.ReleaseHeight, "0.00", "m");
+        _height.ValueChanged += value => { if (!_changing) SetSettings(Settings with { ReleaseHeight = value }); };
+
+        box = Box("Practice guides", out frame);
+        _pitchGuide = Check(box, frame, "ShowPitchPosition", "Show pitch position");
+        _trajectoryGuide = Check(box, frame, "ShowPredictedTrajectory", "Show predicted bowling trajectory");
+        _pitchGuide.Toggled += _ => GuidesChanged?.Invoke(Guides);
+        _trajectoryGuide.Toggled += _ => GuidesChanged?.Invoke(Guides);
+
+        _status = VisualTheme.Label("Preparing delivery…", 14, VisualTheme.Muted);
+        _status.Name = "DeliveryStatus"; _status.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _status.CustomMinimumSize = new(0, 38); stack.AddChild(_status);
         Resized += PositionCard;
-        _card.Resized += PositionCard;
+        RefreshControls(); CallDeferred(MethodName.PositionCard);
+    }
+
+    public void SetSettings(PracticeBowlingSettings settings)
+    {
+        if (_changing || Settings == settings) return;
+        Settings = settings; RefreshControls(); SettingsChanged?.Invoke(settings);
+    }
+
+    private void RefreshControls()
+    {
+        bool moveFromLength = _length.HasFocus() && Settings.RandomPitchLength;
+        bool moveFromSpeed = _speed.HasFocus() && Settings.RandomSpeed;
+        _changing = true;
+        _bowler.Select((int)Settings.Bowler);
+        _randomLength.SetPressedNoSignal(Settings.RandomPitchLength); _randomSpeed.SetPressedNoSignal(Settings.RandomSpeed);
+        _length.Value = Settings.ManualLength; _speed.Value = Settings.ManualSpeedKph; _height.Value = Settings.ReleaseHeight;
+        _changing = false;
+        var profile = BowlerProfiles.Get(Settings.Bowler);
+        _speedRange.Text = $"{profile.MinSpeedKph:0.#}–{profile.MaxSpeedKph:0.#} km/h";
+        _lengthRange.Visible = Settings.RandomPitchLength; _manualLength.Visible = !Settings.RandomPitchLength;
+        _speedRange.Visible = Settings.RandomSpeed; _manualSpeed.Visible = !Settings.RandomSpeed;
+        RebuildFocus();
+        if (moveFromLength) _randomLength.GrabFocus();
+        if (moveFromSpeed) _randomSpeed.GrabFocus();
         CallDeferred(MethodName.PositionCard);
+    }
+
+    public void SetPreparation(bool preparing, bool ready, string error)
+    {
+        _status.Text = preparing ? "Preparing delivery…" : error;
+        _status.AddThemeColorOverride("font_color", error.Length == 0 ? VisualTheme.Muted : VisualTheme.Coral);
+        bool wasReady = CanBowl; _bowl.Disabled = !ready;
+        if (wasReady != ready) RebuildFocus();
     }
 
     public void Open()
     {
-        Visible = true;
-        _error.Text = "";
-        _selected = 0;
-        _length.GrabFocus();
-        RefreshSelection();
-        PositionCard();
+        Show(); _stickX = _stickY = 0; RebuildFocus(); _bowl.GrabFocus();
+        _scroll.ScrollVertical = 0; PositionCard();
     }
 
-    public void ShowError(string error) => _error.Text = error;
-
-    public void Begin() => BeginRequested?.Invoke(Values);
-
-    public void HandleController(JoyButton button)
+    public bool CloseBowlerList()
     {
-        if (button == JoyButton.DpadDown) _selected = (_selected + 1) % _fields.Count;
-        else if (button == JoyButton.DpadUp) _selected = (_selected + _fields.Count - 1) % _fields.Count;
-        else if (button is JoyButton.DpadLeft or JoyButton.DpadRight)
+        if (!_bowler.GetPopup().Visible) return false;
+        _bowler.GetPopup().Hide(); _bowler.GrabFocus(); return true;
+    }
+
+    public bool HandleInput(InputEvent evt)
+    {
+        if (_bowler.GetPopup().Visible) return false;
+        if (evt is InputEventJoypadMotion axis && axis.Axis is JoyAxis.LeftX or JoyAxis.LeftY)
         {
-            double step = _selected == 0 ? .1 : _fields[_selected].Step;
-            double direction = button == JoyButton.DpadRight ? 1 : -1;
-            // The bowler is on the right: moving left on the pitch rail increases the distance.
-            _fields[_selected].Value += direction * step * (_selected == 0 ? -1 : 1);
+            ref int direction = ref (axis.Axis == JoyAxis.LeftX ? ref _stickX : ref _stickY);
+            ref double repeat = ref (axis.Axis == JoyAxis.LeftX ? ref _repeatX : ref _repeatY);
+            int next = Math.Abs(axis.AxisValue) >= .55 ? Math.Sign(axis.AxisValue) : 0;
+            if (Math.Abs(axis.AxisValue) < .25) direction = 0;
+            else if (next != 0 && direction != next)
+            {
+                direction = next; repeat = .4;
+                if (axis.Axis == JoyAxis.LeftX) Adjust(next); else MoveFocus(next);
+            }
+            return true;
         }
-        else return;
-        _fields[_selected].GrabFocus();
+        int vertical = 0, horizontal = 0; bool accept = false;
+        if (evt is InputEventJoypadButton { Pressed: true } joy)
+        {
+            vertical = joy.ButtonIndex == JoyButton.DpadDown ? 1 : joy.ButtonIndex == JoyButton.DpadUp ? -1 : 0;
+            horizontal = joy.ButtonIndex == JoyButton.DpadRight ? 1 : joy.ButtonIndex == JoyButton.DpadLeft ? -1 : 0;
+            accept = joy.ButtonIndex == JoyButton.A;
+        }
+        else if (evt is InputEventKey { Pressed: true } key)
+        {
+            vertical = key.Keycode == Key.Down ? 1 : key.Keycode == Key.Up ? -1 : key.Keycode == Key.Tab ? (key.ShiftPressed ? -1 : 1) : 0;
+            horizontal = key.Keycode == Key.Right ? 1 : key.Keycode == Key.Left ? -1 : 0;
+            accept = !key.Echo && key.Keycode is Key.Enter or Key.KpEnter or Key.Space;
+        }
+        if (vertical != 0) MoveFocus(vertical);
+        else if (horizontal != 0) Adjust(horizontal);
+        else if (accept)
+        {
+            var focus = GetViewport().GuiGetFocusOwner();
+            if (focus == _bowler) { _bowler.ShowPopup(); _bowler.GetPopup().SetFocusedItem(_bowler.Selected); }
+            else if (focus is CheckBox check) check.ButtonPressed = !check.ButtonPressed;
+            else if (focus == _bowl && CanBowl) BeginRequested?.Invoke();
+        }
+        else return false;
+        return true;
+    }
+
+    public override void _Process(double delta)
+    {
+        if (!IsVisibleInTree() || !GetWindow().HasFocus() || _bowler.GetPopup().Visible) { _stickX = _stickY = 0; return; }
+        if (_stickY != 0 && (_repeatY -= delta) <= 0) { _repeatY = .14; MoveFocus(_stickY); }
+        if (_stickX != 0 && (_repeatX -= delta) <= 0) { _repeatX = .14; Adjust(_stickX); }
+    }
+
+    private void Adjust(int direction)
+    {
+        var focus = GetViewport().GuiGetFocusOwner();
+        if (focus == _bowler) SetSettings(Settings.WithBowler((BowlerType)Math.Clamp((int)Settings.Bowler + direction, 0, BowlerProfiles.All.Length - 1)));
+        else if (focus == _length) _length.Value -= direction * .1;
+        else if (focus is Godot.Range slider) slider.Value += direction * slider.Step;
+        else if (focus is CheckBox check) check.ButtonPressed = direction > 0;
+    }
+
+    private void MoveFocus(int direction)
+    {
+        if (_focusOrder.Count == 0) return;
+        int selected = _focusOrder.IndexOf(GetViewport().GuiGetFocusOwner());
+        _focusOrder[(Math.Max(0, selected) + direction + _focusOrder.Count) % _focusOrder.Count].GrabFocus();
+    }
+
+    private void RebuildFocus()
+    {
+        _focusOrder.Clear();
+        foreach (var (control, _) in _entries)
+        {
+            // Bowl stays focused during preparation, but cannot activate until ready.
+            bool enabled = control.IsVisibleInTree() && (control == _bowl || control is not BaseButton button || !button.Disabled);
+            control.FocusMode = enabled ? FocusModeEnum.All : FocusModeEnum.None;
+            if (enabled) _focusOrder.Add(control);
+        }
+        for (int i = 0; i < _focusOrder.Count; i++)
+        {
+            var control = _focusOrder[i];
+            // Native controls copy the paths; release these temporary managed wrappers now.
+            using var next = control.GetPathTo(_focusOrder[(i + 1) % _focusOrder.Count]);
+            using var previous = control.GetPathTo(_focusOrder[(i + _focusOrder.Count - 1) % _focusOrder.Count]);
+            control.FocusNext = control.FocusNeighborBottom = next;
+            control.FocusPrevious = control.FocusNeighborTop = previous;
+        }
         RefreshSelection();
     }
 
-    private static HSlider Slider(string name, double min, double max, double step, double value)
+    private void Register(Control control, PanelContainer? frame)
     {
-        var slider = new HSlider
-        {
-            Name = name, MinValue = min, MaxValue = max, Step = step, Value = value,
-            CustomMinimumSize = new(0, 32), FocusMode = FocusModeEnum.All,
-            MouseDefaultCursorShape = CursorShape.PointingHand
-        };
+        _entries.Add((control, frame));
+        control.FocusEntered += () => { RefreshSelection(); if (frame != null) _scroll.EnsureControlVisible(frame); };
+    }
+
+    private VBoxContainer Box(string title, out PanelContainer frame)
+    {
+        frame = new(); frame.AddThemeStyleboxOverride("panel", _rowNormal); _rows.Add(frame); _content.AddChild(frame);
+        var content = new VBoxContainer(); content.AddThemeConstantOverride("separation", 5); frame.AddChild(content);
+        content.AddChild(VisualTheme.Label(title, 18)); return content;
+    }
+
+    private CheckBox Check(VBoxContainer parent, PanelContainer frame, string name, string caption)
+    {
+        var check = new CheckBox { Name = name, Text = caption, ButtonPressed = true, CustomMinimumSize = new(0, 32) };
+        parent.AddChild(check); Register(check, frame); VisualTheme.NavigationButton(check, 8); return check;
+    }
+
+    private HSlider Slider(VBoxContainer parent, PanelContainer frame, string name,
+        double min, double max, double step, double value, string format, string unit)
+    {
+        var badge = VisualTheme.Label($"{value.ToString(format)} {unit}", 20); badge.Name = name + "Value"; parent.AddChild(badge);
+        var slider = new HSlider { Name = name, MinValue = min, MaxValue = max, Step = step, Value = value,
+            CustomMinimumSize = new(0, 30), MouseDefaultCursorShape = CursorShape.PointingHand };
         slider.AddThemeStyleboxOverride("slider", VisualTheme.Box(VisualTheme.Border, VisualTheme.Border, 3, 3));
         slider.AddThemeStyleboxOverride("grabber_area", VisualTheme.Box(VisualTheme.Ink, VisualTheme.Ink, 3, 3));
         slider.AddThemeStyleboxOverride("grabber_area_highlight", VisualTheme.Box(VisualTheme.Ink, VisualTheme.Ink, 3, 3));
-        return slider;
+        parent.AddChild(slider); Register(slider, frame);
+        slider.ValueChanged += number => badge.Text = $"{number.ToString(format)} {unit}";
+        var limits = new HBoxContainer(); parent.AddChild(limits);
+        var minimum = VisualTheme.Label($"{min.ToString(format)} {unit}", 12, VisualTheme.Muted);
+        minimum.SizeFlagsHorizontal = SizeFlags.ExpandFill; limits.AddChild(minimum);
+        limits.AddChild(VisualTheme.Label($"{max.ToString(format)} {unit}", 12, VisualTheme.Muted)); return slider;
     }
 
-    private void Field(VBoxContainer parent, string title, string hint, Godot.Range slider,
-        string? format = null, string unit = "")
+    private void PositionCard()
     {
-        var frame = new PanelContainer();
-        frame.AddThemeStyleboxOverride("panel", _rowNormal);
-        _rows.Add(frame);
-        parent.AddChild(frame);
-        var content = new VBoxContainer();
-        content.AddThemeConstantOverride("separation", 6);
-        frame.AddChild(content);
-        var row = new HBoxContainer { CustomMinimumSize = new Vector2(0, 48) };
-        row.AddThemeConstantOverride("separation", 16);
-        content.AddChild(row);
-        var text = new VBoxContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill, SizeFlagsVertical = SizeFlags.ShrinkCenter };
-        row.AddChild(text);
-        text.AddChild(VisualTheme.Label(title, 19));
-        text.AddChild(VisualTheme.Label(hint, 13, VisualTheme.Muted));
-        if (format != null)
-        {
-            string Display(double value) => $"{value.ToString(format)} {unit}";
-            var value = VisualTheme.Label(Display(slider.Value), 20);
-            value.Name = slider.Name + "Value";
-            value.SizeFlagsVertical = SizeFlags.ShrinkCenter;
-            row.AddChild(value);
-            slider.ValueChanged += number => value.Text = Display(number);
-        }
-        content.AddChild(slider);
-        if (format != null)
-        {
-            var limits = new HBoxContainer();
-            var min = VisualTheme.Label($"{slider.MinValue.ToString(format)} {unit}", 12, VisualTheme.Muted);
-            min.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-            limits.AddChild(min);
-            limits.AddChild(VisualTheme.Label($"{slider.MaxValue.ToString(format)} {unit}", 12, VisualTheme.Muted));
-            content.AddChild(limits);
-        }
-        int fieldIndex = _fields.Count;
-        _fields.Add(slider);
-        slider.FocusEntered += () => { _selected = fieldIndex; RefreshSelection(); };
-        slider.ValueChanged += _ =>
-        {
-            if (_error == null) return; // Fields are still being constructed.
-            _error.Text = "";
-            SettingsChanged?.Invoke(Values);
-        };
+        _card.CustomMinimumSize = new(Math.Min(820, Size.X - 48), 0);
+        _card.Size = new(_card.CustomMinimumSize.X, Math.Min(Size.Y - 48, _content.GetCombinedMinimumSize().Y + 240));
+        _card.Position = (Size - _card.Size) / 2;
     }
-
-    private void PositionCard() => _card.Position = (Size - _card.Size) / 2;
 
     private void RefreshSelection()
     {
-        for (int i = 0; i < _rows.Count; i++)
-            _rows[i].AddThemeStyleboxOverride("panel", i == _selected ? _rowSelected : _rowNormal);
+        var focus = GetViewport().GuiGetFocusOwner(); PanelContainer? selected = null;
+        foreach (var entry in _entries) if (entry.Control == focus) { selected = entry.Frame; break; }
+        foreach (var frame in _rows) frame.AddThemeStyleboxOverride("panel", frame == selected ? _rowSelected : _rowNormal);
     }
 
     public override void _ExitTree() { _rowNormal.Dispose(); _rowSelected.Dispose(); }

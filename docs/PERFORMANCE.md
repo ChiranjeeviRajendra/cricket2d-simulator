@@ -1,6 +1,8 @@
 # Performance audit and regression checks
 
-The runtime targets 120 rendered frames per second while focused and 30 while unfocused. Losing focus also pauses the simulation. Physics remains at 120 ticks per second with eight substeps; collision accuracy, controls, animation interpolation and field dimensions are unchanged.
+The runtime targets at least 120 rendered frames per second, without an engine FPS cap while focused. Background rendering is limited to 30 FPS. Losing focus also pauses the simulation. Physics remains at 120 ticks per second with eight substeps; collision accuracy, controls, animation interpolation and field dimensions are unchanged.
+
+Earlier audit sections below retain their original test conditions, including the former 120 FPS cap. The batsman rework section records the current rendering policy and measurements.
 
 ## Findings and changes
 
@@ -12,7 +14,7 @@ Changes:
 - `FieldMesh` reuses CPU lists and GPU vertex, colour and index buffers. Camera movement updates buffer regions without creating replacement native meshes. Empty geometry and backend buffer strides are handled explicitly. Unused index slots are degenerate triangles; buffers grow only if their capacity is exceeded.
 - `GroundView` retains draw commands while setup or a paused pose is unchanged, skips hidden views, and invalidates the cache for phase, pose and preview changes. Godot already caches custom drawing commands until a redraw is requested. See [custom drawing](https://docs.godotengine.org/en/stable/tutorials/2d/custom_drawing_in_2d.html), [ArrayMesh](https://docs.godotengine.org/en/stable/classes/class_arraymesh.html) and [RenderingServer](https://docs.godotengine.org/en/stable/classes/class_renderingserver.html).
 - Animation stance bounds are computed when a rig is constructed, replacing four LINQ scans on every substep. Indexed surface traversal avoids enumerator allocation. Reusable ellipse points, cached input action names and change-only HUD formatting remove more recurring allocations.
-- Delivery previews run on one cancellable worker. Slider edits replace the pending request; stale results cannot overwrite newer settings. No Godot objects are accessed by the worker. Starting an actual delivery still uses the authoritative solver and the existing validation.
+- Delivery previews run on one cancellable worker. Slider edits replace the pending request; stale results cannot overwrite newer settings. No Godot objects are accessed by the worker. Practice starts the exact solver-produced plan without repeating the solve on the game thread; the direct settings-based simulation API remains available.
 - Slider badges and focus styles are reused. Capture images and owned meshes are disposed explicitly. Imported textures remain owned by Godot's shared resource cache.
 - The foreground cap is explicit, VSync is enabled, and background rendering is capped at 30 FPS in both gameplay and the batting preview. A lower-refresh display can limit rendering below 120; see [Engine.max_fps](https://docs.godotengine.org/en/stable/classes/class_engine.html#class-engine-property-max-fps).
 - C# optimization is enabled for local builds as well as release builds, with warnings treated as errors. Debug symbols remain available, though optimized locals can be harder to inspect.
@@ -52,7 +54,7 @@ FPS is calculated from wall-clock frame intervals. Allocation counters include a
 # Normal play at fullscreen 4K; F11 can also toggle fullscreen during play.
 .\tools\Run.ps1 -FourK
 
-# Build, render seven scenarios at 4K, write artifacts/performance.json, then exit.
+# Build, render eight scenarios at 4K, write artifacts/performance.json, then exit.
 .\tools\Run.ps1 -PerformanceTest
 
 # Engine-independent behavior and allocation regression checks.
@@ -86,3 +88,181 @@ The final short local benchmark (`artifacts/performance-seating.json`) used the 
 All seven sampling windows recorded zero managed garbage collections. Moving-camera allocation was 268 bytes/frame including benchmark bookkeeping; working set ranged from 255–283 MiB across scenarios. Camera-motion CPU usage was 63.5% of one logical core. These short averages do not promise a perfect frame lock or long-session stability. Captures run separately and their displayed FPS includes intentional capture waits/readback stalls.
 
 Debug (optimized) and `ExportRelease` builds completed with zero warnings/errors; all 52 Release core checks and the native gameplay/menu smoke checks passed. Captures of normal, both side zooms and the full stadium were inspected. The timed run used the optimized local game build, not a packaged export; export templates/presets are not installed/configured here, so exported-build hardware validation remains outstanding.
+
+## Randomized practice regression check — 2026-11-04
+
+Practice generation reuses the single cancellable worker. Each pending ball has a stable seed; rapid changes cancel obsolete work rather than queueing jobs. Bowling consumes the prepared plan directly, removing a second solver run from the input callback. Guide and focus changes do not prepare another plan. The benchmark adds `random-practice`, cycling all five categories and release heights every 0.25 s; `settings-drag` now explicitly enables both manual sliders.
+
+`artifacts/performance-practice.json` records the local **ExportRelease game/core assemblies** running under Godot .NET on the reference hardware above (RTX 4080 SUPER), native 3840 × 2160 fullscreen, Compatibility renderer, VSync and the existing 120 FPS cap. Each scenario has two seconds of warm-up and three seconds of sampling. The current user field configuration has a 15 m outer wall and reduced seating rows, so comparisons with the earlier stadium configuration do not isolate code changes.
+
+| Scenario | Average FPS | Frame interval p99 | Median draw calls |
+| --- | ---: | ---: | ---: |
+| Ready | 119.998 | 8.397 ms | 123 |
+| Live delivery | 119.999 | 8.436 ms | 127 |
+| Wide field | 119.998 | 8.408 ms | 128 |
+| Moving camera | 119.998 | 8.402 ms | 128 |
+| Dragging manual settings | 119.999 | 8.399 ms | 178 |
+| Repeated deliveries | 119.998 | 8.400 ms | 124 |
+| Main menu | 119.998 | 8.467 ms | 16 |
+| Rapid random-practice changes | 119.999 | 8.480 ms | 163 |
+
+All eight sampling windows recorded zero managed garbage collections. Working set stayed approximately 250–281 MiB. Random-practice changes allocated 339 bytes per rendered frame across the managed process, including background preparation and benchmark bookkeeping. Manual-slider dragging allocated 4,494 bytes/frame while changing values every frame. These measurements show no sustained frame-rate regression in this short run; p99 intervals exceed the ideal 8.333 ms slightly, so they do not establish a perfect lock or long-session stability.
+
+Both build configurations completed without warnings/errors, all 56 Release core checks passed, and native UI smoke checks covered category selection, dropdown cancellation, checkbox activation, hidden-slider focus, scrolling, errors/readiness, Bowl, menu retention and guide/trail independence. The dropdown additionally checks D-pad/left-stick navigation and controller A/B activation/cancellation. Existing physics, collision, audio-selection, determinism and 30/60/144 FPS interpolation checks remain in that suite. Captures of the bowler dropdown, default/manual/scrolled settings and guides on/off were inspected. No physical controller was connected; controller inputs were synthesized. Packaged-export validation remains outstanding because export templates/presets are absent; the timed run used release assemblies in the local runner.
+
+## Initial batsman rework — 2026-11-05 (superseded character)
+
+The character now uses an 18-bone skin (11,143 source vertices, 10,736 polygons, nine shared materials) in one adaptive 256/512/1024-pixel transparent viewport. Unchanged poses reuse the previous texture. No full-body rigid bodies or extra collision solvers were introduced. The focused engine cap is now zero; VSync is retained by default. Background focus handling remains paused/30 FPS.
+
+Measurements used the reference Ryzen 7 7800X3D / RTX 4080 SUPER PC, NVIDIA 610.88, Godot 4.7.2 .NET Compatibility renderer and a confirmed 3840 × 2160 render target. Both runs used **ExportRelease assemblies in the local Godot runner**, not a packaged export. They include continuous stroke, bottom-hand input and alternating front/back trigger pressure during the animated scenarios.
+
+- `artifacts/performance-batsman-initial-vsync.json`: two cycles, two-second warm-up plus six-second sample per scenario, approximately 128 seconds overall.
+- `artifacts/performance-batsman-initial-uncapped.json`: separate diagnostic with VSync disabled, two-second warm-up plus three-second sample per scenario.
+- `artifacts/performance-batsman-before.json`: earlier renderer baseline, three-second samples, engine cap 120 and VSync enabled. This is not an uncapped baseline.
+
+| Scenario | VSync cycle 2 FPS | VSync p99 ms | Uncapped FPS | Uncapped 1% low FPS | Uncapped p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ready | 117.67 | 14.496 | 2076.00 | 912.10 | 0.908 |
+| Live batting | 120.00 | 8.606 | 443.69 | 298.61 | 2.802 |
+| Wide view | 120.00 | 8.406 | 844.72 | 637.58 | 1.478 |
+| Moving camera | 120.00 | 8.414 | 379.21 | 242.97 | 3.553 |
+| Settings drag | 120.00 | 8.442 | 1211.32 | 590.29 | 1.193 |
+| Delivery resets | 120.00 | 8.438 | 2175.52 | 1162.37 | 0.682 |
+| Menu | 120.17 | 8.479 | 3123.96 | 1371.80 | 0.632 |
+| Random practice | 120.00 | 8.424 | 1695.33 | 599.66 | 0.895 |
+
+The second VSync ready sample had an isolated timing disturbance: 1% low was 39.85 FPS despite a median of 8.335 ms. Its cause was not established; the results do **not** demonstrate a perfect 120 FPS lock. Uncapped results show substantial throughput headroom, but do not prove the cause of a VSync hitch. The 1% low metric is the reciprocal of the average interval of the slowest 1% of frames, not simply 1000 divided by p99.
+
+Ready draw calls fell from 123 to 64–65; animated views recorded 77–78 versus the baseline's 127–128. No measured window triggered a managed garbage collection. VSync working set ranged from 254 to 289 MiB (cycle 2: 279–289 MiB); native resource count remained 25. Object count and private memory are retained in the JSON for longer-term comparisons. These short runs do not establish indefinite memory stability.
+
+Steady wide-view allocation was 79–103 bytes/frame including benchmark bookkeeping; moving-camera allocation was 227–238 bytes/frame. The first VSync live sample recorded 9,319 bytes/frame versus 396 in cycle 2, so it should not be described as allocation-free gameplay. The changed swing also changes contacts and camera travel: first live scenery rebuilds were 720 versus 50 in the older baseline. The runs therefore do not isolate the renderer's CPU cost. Uncapped live physics p95 was 1.414 ms. GPU execution time was not measured separately.
+
+Reproduce with:
+
+```powershell
+.\tools\Benchmark-Batsman.ps1 -Seconds 6 -Cycles 2
+.\tools\Benchmark-Batsman.ps1 -Seconds 3 -Cycles 1 -Uncapped
+```
+
+The script builds Debug and ExportRelease, temporarily supplies the release assemblies to the local runner, records their hash, and restores the original Debug bytes in a `finally` block. Do not run another game/build concurrently. The uncapped option is diagnostic only and never changes project presentation settings.
+
+Validation: 51/51 core checks passed in Release, both game/lab native smoke suites passed, 3,321 rendered rig configurations plus four motion clips passed the 3D limb audit, and lab/field captures were visually inspected. Build/import completed without new runtime errors. No physical gamepad was connected; bindings were tested with synthetic engine input. Export templates/presets remain unavailable, so **packaged-release validation remains outstanding**. The lab retains slow-motion/pause/single-tick rehearsal; a recorded ball-replay feature was not added by this rework.
+
+## Revised human mesh and 3D motion — 2026-11-05
+
+Following visual review, the segmented character was replaced by a continuous MakeHuman-derived skin with retargeted male proportions, original kit/equipment and shared core/render joints. The source now has 13,640 vertices, 13,556 polygons, 18 bones and ten shared materials. The renderer loads rest-length metadata once and no longer runs a second arm IK solve. The earlier measurements above describe the rejected visual version and are retained as historical context.
+
+The same hardware, resolution, release-assembly runner and commands were used. `artifacts/performance-batsman-pre-shots-vsync.json` contains two six-second samples per scenario after two-second warm-ups; `artifacts/performance-batsman-pre-shots-uncapped.json` contains separate three-second samples with VSync disabled. Both confirmed a native 3840 × 2160 target and engine cap zero.
+
+| Scenario | VSync cycle 2 FPS | VSync p99 ms | Uncapped FPS | Uncapped 1% low FPS | Uncapped p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ready | 120.00 | 8.432 | 2129.05 | 1318.32 | 0.685 |
+| Live batting | 120.00 | 8.435 | 456.06 | 322.83 | 2.730 |
+| Wide view | 120.00 | 8.437 | 837.44 | 626.77 | 1.489 |
+| Moving camera | 120.00 | 8.430 | 344.60 | 280.32 | 3.451 |
+| Settings drag | 120.16 | 8.438 | 1210.93 | 585.12 | 1.326 |
+| Delivery resets | 120.00 | 8.438 | 1432.68 | 860.83 | 0.926 |
+| Menu | 120.00 | 8.431 | 3281.37 | 1726.74 | 0.480 |
+| Random practice | 120.17 | 8.443 | 1731.30 | 962.49 | 0.859 |
+
+VSync camera-motion 1% lows were 86.49 and 99.54 FPS across the two cycles; the average is not a perfect 120 FPS lock. Compared with the earlier short uncapped run, camera throughput decreased from 379.21 to 344.60 FPS while live batting rose from 443.69 to 456.06 FPS. Animation, contacts and camera paths also changed, so this is not an isolated renderer-cost comparison and does not establish a general performance improvement.
+
+All measured windows recorded zero managed garbage collections. Animated draw-call medians were 78–79. VSync working set ranged from 263.8 to 284.3 MiB; the uncapped run reached 317.7 MiB while rapidly changing settings. VSync live batting allocated 272–295 bytes/frame and camera motion 226–239 bytes/frame, including benchmark bookkeeping. Native resource count stayed at 26. These short runs do not prove prolonged memory stability or separately measure GPU execution time.
+
+Validation: Debug and ExportRelease builds completed with zero warnings/errors; 51/51 Release core checks passed, including new 3D limb, elbow-continuity and rear-leg support assertions. Native gameplay and preview controls/playback/reload checks passed. The rendered audit covered 3,321 poses plus four clips, and guard/backlift/contact/follow-through/front-foot/back-foot captures were inspected. A final wrist material assignment correction did not change topology, bones or material count. No physical controller was connected. Packaged-export validation remains outstanding; measurements use ExportRelease assemblies in the local runner.
+
+The motion is an authored approximation with IK, not captured athlete motion or a complete biomechanical/self-collision model. Passing numerical checks does not certify reference-level visual fidelity.
+
+## Deliberate rotation and four shot styles — 2026-11-05
+
+The input gate now requires an outer-stick anchor and a 24° counterclockwise arc. Four authored strokes replace right-stick steering. Arm skin roll follows the elbow bend plane, and remaining wrist skin follows the forearm. Gesture/pose evaluation uses fixed-size state, value types and bounded reach projections; it adds no per-frame collections or resource loads. The pause hint adds roughly one HUD draw call. The mesh remains 13,640 vertices, 13,556 polygons, 18 bones and ten materials.
+
+The benchmark input was updated to perform valid arcs, recover through centre, cycle all five natural/modified strokes and alternate trigger pressure. This changes animation/contact trajectories, so comparison with the previous section is a regression check rather than an isolated CPU-cost experiment.
+
+Same Ryzen 7 7800X3D / RTX 4080 SUPER, NVIDIA 610.88, Godot 4.7.2 .NET Compatibility renderer, confirmed 3840 × 2160 target, engine cap zero and ExportRelease assemblies in the local runner:
+
+- `artifacts/performance-batsman-pre-clock-vsync.json`: two cycles, two-second warm-up and six-second sample per scenario. Taken before the temporary navigation-path disposal correction described below.
+- `artifacts/performance-batsman-pre-clock-uncapped.json`: final three-second samples after two-second warm-ups, VSync disabled only for this diagnostic; clean process exit.
+
+| Scenario | VSync cycle 2 FPS | VSync p99 ms | Uncapped FPS | Uncapped 1% low FPS | Uncapped p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ready | 120.00 | 8.421 | 2116.53 | 1290.46 | 0.693 |
+| Live batting | 120.00 | 8.436 | 449.98 | 326.05 | 2.771 |
+| Wide view | 120.00 | 8.422 | 833.83 | 513.36 | 1.782 |
+| Moving camera | 120.16 | 8.441 | 341.57 | 248.01 | 3.723 |
+| Settings drag | 120.00 | 8.435 | 1223.71 | 708.71 | 1.264 |
+| Delivery resets | 120.00 | 8.416 | 1410.19 | 794.38 | 0.984 |
+| Menu | 120.00 | 8.417 | 3273.65 | 1799.66 | 0.475 |
+| Random practice | 120.17 | 8.441 | 1762.39 | 939.21 | 0.859 |
+
+The final short uncapped run is close to the preceding motion version: live batting 449.98 versus 456.06 FPS, moving camera 341.57 versus 344.60 FPS. These samples do not establish a statistically significant improvement or regression. VSync live-batting 1% low was 116.37 FPS in cycle 2; camera motion was 99.84/108.21 FPS across cycles. Averages around 120 FPS do not establish a perfect frame lock.
+
+Every measured window recorded zero managed garbage collections. Animated draw-call medians were 79–80. VSync working set ranged approximately 262–299 MiB; the final uncapped run peaked at 307.4 MiB. Native resource count remained 26. Final uncapped live/camera allocation was 255/248 bytes per frame, including benchmark bookkeeping; live physics p95 was 1.416 ms. GPU execution time was not measured separately. These runs do not establish prolonged memory stability.
+
+The first uncapped attempt wrote all samples and then reported a native `NodePath.Finalize` access violation at shutdown, despite a zero runner exit code. Its report is preserved as `performance-batsman-shots-exit-error.json`. The delivery panel was leaving temporary `GetPathTo` results for finalization. They are now disposed immediately after assignment to native focus properties. Godot's [NodePath implementation](https://github.com/godotengine/godot/blob/master/modules/mono/glue/GodotSharp/GodotSharp/Core/NodePath.cs) confirms that explicit disposal suppresses finalization. The repeat benchmark and subsequent native smoke/capture runs exited cleanly; this supports the correction but is not proof against every engine shutdown race. The benchmark script now captures stderr and rejects fatal/runtime-error text even if the runner returns zero.
+
+Validation: Debug and ExportRelease builds passed without warnings/errors; 52/52 Release core checks passed. These cover radial pushes, centre crossings, jitter, shot selection, disabled right stick, actual accelerated elbow continuity, limb lengths, bat clearance, weight transfer and collisions. Native gameplay and preview smoke checks passed, including Start pause, focus recovery, View settings and A/B/X/Y routing. The final rendered audit covered 1,845 poses plus seven clips; all shot finishes and the final wrist skin were inspected. Blender source contains all seven current baked review actions. No physical controller was connected. Packaged-export and long-duration hardware validation remain outstanding; the local runner used release assemblies.
+
+## Direct stick-clock control — 2026-11-05
+
+A is now the default and the separate natural mode is removed. Active stroke progress follows absolute stick angle without a speed cap, acceleration governor, response easing or one-tick character-render interpolation. X/B stop at 2/1:30; A/Y stop at 12. Pose reconstruction keeps the grip on the arm ray while limiting extension to both hands' reach and ground clearance. Bat mesh orientation now includes the actual face normal. Mesh/bone/material counts are unchanged.
+
+The rig consumes input once per 120 Hz tick. Eight ball-contact substeps reconstruct intervening poses, so a whole controller sample is not incorrectly assigned to the first 1/960-second interval. The game renders the current stored character pose; it no longer reconstructs another interpolated character on every render frame. These changes add no per-frame collection or resource loading. Rendering the latest fixed-step pose prioritizes input latency over interpolation between character ticks; it does not measure or eliminate controller/OS/display latency.
+
+Measurements used the same Ryzen 7 7800X3D / RTX 4080 SUPER, NVIDIA 610.88, Godot 4.7.2 .NET Compatibility renderer, confirmed 3840 × 2160 target, engine cap zero and ExportRelease assemblies in the local runner. Both processes exited cleanly.
+
+- `artifacts/performance-batsman-vsync.json`: two cycles; two-second warm-up plus six-second sample per scenario. This preceded the final stationary-push gate correction and clock-label adjustment; neither changes the valid stroke pose curves.
+- `artifacts/performance-batsman-pre-830-uncapped.json`: final code at that revision; two-second warm-up plus three-second sample per scenario with VSync disabled only for this diagnostic.
+
+| Scenario | VSync cycle 2 FPS | VSync p99 ms | Uncapped FPS | Uncapped 1% low FPS | Uncapped p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Ready | 120.00 | 8.436 | 2154.24 | 1401.77 | 0.660 |
+| Live batting | 120.00 | 8.506 | 484.01 | 307.98 | 2.728 |
+| Wide view | 120.00 | 8.439 | 962.26 | 641.53 | 1.431 |
+| Moving camera | 120.00 | 8.457 | 361.60 | 280.74 | 3.461 |
+| Settings drag | 120.00 | 8.447 | 1230.06 | 784.26 | 1.150 |
+| Delivery resets | 120.17 | 8.424 | 1418.19 | 866.74 | 0.919 |
+| Menu | 120.00 | 8.424 | 3367.20 | 1915.17 | 0.487 |
+| Random practice | 120.00 | 8.457 | 1707.57 | 988.67 | 0.854 |
+
+VSync live-batting 1% lows were 117.77/102.72 FPS across cycles; moving-camera lows were 108.18/110.19 FPS. The average is not a perfect 120 FPS lock. Uncapped live/camera averages were 484.01/361.60 versus the preceding version's 449.98/341.57 FPS, but the gesture, contact paths and time spent reusing a pose changed. These short runs do not isolate a rendering improvement or establish end-to-end input latency.
+
+Every live/wide/camera window and every uncapped window recorded zero managed collections. The first VSync settings-drag window recorded one collection in each generation, so the complete run is not collection-free. Final uncapped live/camera allocation was 248/257 bytes per frame, including diagnostic bookkeeping; settings dragging was 3,768 bytes/frame. VSync working set ranged 262.1–283.5 MiB; uncapped peaked at 305.7 MiB. Native resource count remained 26. Live uncapped physics p95 was 1.708 ms. Animated draw-call medians were 85–86 with VSync and 75–76 uncapped, where more render frames reuse the latest 120 Hz character texture. GPU time and prolonged memory stability were not separately established.
+
+Validation: Debug and ExportRelease builds completed with zero warnings/errors; 52/52 Release checks passed, including exact per-tick angle and speed assertions, immediate hold/reverse, all mode stops, A/default equivalence, stationary pushes near 9, 3D limb/clearance sweeps and collision/audio regression checks. Native game and preview smoke tests passed. The rendered audit covered 1,476 poses plus seven clips; A/X/B/Y starts and finishes were visually inspected. Blender review actions were refreshed from those poses. No physical controller was connected and no packaged export was available; controller feel, packaged release and prolonged-session validation remain outstanding.
+
+## 8:30 start and ignored-rotation fixes — 2026-11-05
+
+All four modes now share the 255° (8:30) start constant. Regression tests reproduced two ignored-input cases before correction: entering the start zone after an off-angle push, and starting a second full rim rotation without centring. The gate no longer permanently rejects an earlier push or accumulates extra revolutions after leaving the legal arc. Moving back toward the start refreshes the activation anchor. A fresh deliberate arc can also interrupt recovery; its velocity/sweep begins at the new stick-sample pose rather than the unrelated recovery position. Idle practice accepts swings while the delivery panel is closed, without advancing a ball or delivery statistics.
+
+The changes add bounded scalar gesture state and one stored value-type frame; no new gameplay collections, resources or threads. A new stroke reconstructs its initial sweep pose once. Idle rehearsal now evaluates the rig at the normal 120 Hz rate, while unchanged rendered poses still reuse the character texture. The preview adds stick/arm clock telemetry at its existing 10 Hz refresh rate and marker rays; those are absent from normal gameplay. Mesh, bone and material counts are unchanged.
+
+`artifacts/performance-batsman-pre-live-modes-uncapped.json` preserves the final ExportRelease-assembly run at this revision: same reference hardware, NVIDIA 610.88, Godot 4.7.2 Compatibility renderer, confirmed native 3840 × 2160, no engine cap, two-second warm-up and three-second sample per scenario. VSync was disabled only for this diagnostic. The process exited cleanly.
+
+| Scenario | Average FPS | 1% low FPS | Frame p99 ms | Median draw calls |
+| --- | ---: | ---: | ---: | ---: |
+| Ready / idle rehearsal | 2047.21 | 1250.71 | 0.722 | 71 |
+| Live batting | 471.84 | 286.47 | 2.827 | 75 |
+| Wide view | 955.07 | 639.09 | 1.445 | 76 |
+| Moving camera | 351.64 | 256.53 | 3.725 | 76 |
+
+Live/camera averages were 471.84/351.64 versus 484.01/361.60 FPS in the preceding short run, preserved as `performance-batsman-pre-830-uncapped.json`. Gesture paths and machine timing differ; this does not establish an isolated performance improvement. All measured windows recorded zero managed collections. Live/camera managed allocation was 249/248 bytes per frame including diagnostics; live physics p95 was 1.666 ms. Working set ranged 270.1–305.2 MiB and native resource count remained 26. No new VSync or packaged-export claim is made from this uncapped run.
+
+Validation: 53/53 Release core checks passed, with regression coverage for rejected starts, entry from both sides of the start zone, twelve interrupted recoveries, consecutive full rotations, exact arm clocks, mode stops and correct re-arm velocity. Native simulated-controller checks repeated the start/recovery/full-circle cases and passed alongside menu, pause and delivery checks. Both build configurations passed without warnings/errors. The 1,476-pose/seven-clip rendered audit also compares the resolved bat bone against the physical bat. Captures were inspected and Blender actions refreshed to start at 8:30. Physical-controller feel, end-to-end hardware input latency, long-duration stability and a packaged export remain unverified.
+
+## Live mode selection and Y's final blade turn — 2026-11-05
+
+Mode selection now runs every fixed tick, including ready, active, held-finish and recovery states. Y matches A through arm clock 2, then maps arms 2 / 1 / 12 to blade 2 / 2:30 / 3. These are bounded scalar changes with no new gameplay collections or resources. On a mode change, the collision bat interpolates its previous and current grip/angle across the full tick; unchanged modes retain the existing constrained-pose sampling. The mesh remains 13,640 vertices, 13,556 polygons, 18 bones and 10 materials.
+
+`artifacts/performance-batsman-uncapped.json` is the new ExportRelease-assembly run on the same hardware/settings and 4K render target, with two-second warm-up and three-second samples. VSync was disabled only for this diagnostic; the engine cap remained zero. The local runner exited cleanly.
+
+| Scenario | Average FPS | 1% low FPS | Frame p99 ms | Median draw calls |
+| --- | ---: | ---: | ---: | ---: |
+| Ready | 2090.18 | 1391.95 | 0.662 | 71 |
+| Live batting | 480.00 | 293.28 | 2.644 | 75 |
+| Wide view | 948.94 | 656.04 | 1.419 | 76 |
+| Moving camera | 348.55 | 222.17 | 4.350 | 76 |
+
+The prior short run averaged 471.84 FPS in live batting and 351.64 FPS during camera motion. These samples do not establish an isolated improvement; camera p99 increased from 3.725 to 4.350 ms. Every measured window recorded zero managed collections. Live/camera allocations were 250 bytes per rendered frame including diagnostics, and live physics p95 was 1.788 ms. Native resource count stayed at 26; working set ranged 273.0–309.0 MiB. No fresh VSync, packaged-export, end-to-end latency or prolonged-memory claim follows from this run.
+
+Validation: 55/55 Release core checks passed, including regressions that failed before the fixes, mode changes throughout the entire arc and recovery, unclipped stick position after leaving X/B, Y blade angles, and mode-change collision velocity over all substeps. Debug and ExportRelease builds had zero warnings/errors. Native Godot controller-event checks passed for mode selection before, during and after a stroke and Y's 2-to-3 blade turn. The 1,476-pose/seven-clip rendered anatomy audit passed; Y captures near arm clocks 2, 1 and 12 were inspected. Blender review actions and the imported character asset were refreshed. No physical controller was connected.

@@ -19,28 +19,31 @@ var tests = new (string Name, Action Run)[]
     ("Live simulation agrees with delivery solver", LiveLanding),
     ("Playable swing sequences produce bat contact", PlayableSwing),
     ("Ball passes through the visible batter; wicket stays collidable", InvulnerableBatter),
-    ("Anatomical bone lengths and joint limits stay bounded", Anatomy),
-    ("Left stick follows the screen clock with straight arms and bat from 8 to 1", BattingChecks.StraightSwing),
-    ("Right stick pivots the bat at the fist without moving the shoulder or hands", BattingChecks.IndependentWrist),
-    ("Wrist limits follow the actual swing angle and interpolate across 12", BattingChecks.WristLimits),
-    ("Swing accelerates, reaches its plateau and slows through follow-through", BattingChecks.SwingSpeeds),
-    ("Committed snap resists reversal, keeps wrist control and rearms without looping", BattingChecks.Snap),
-    ("Repeated full circles preserve continuous collision angles", BattingChecks.FullCircles),
-    ("Both sticks respect configurable dead zones and release behavior", BattingChecks.DeadZones),
-    ("Reverse swing stops at 8 and is slower than the forward stroke", BattingChecks.ReverseLimits),
-    ("Cricket bat inertial properties and impact momentum match reference checks", BattingChecks.CricketPhysics),
-    ("Batsman JSON changes runtime behavior and persists across deliveries", BattingChecks.Configuration),
-    ("Invalid batsman settings fail with actionable errors", BattingChecks.InvalidConfiguration),
+    ("Only deliberate rotation advances the swing; pushes and jitter do not", BattingChecks.Controls),
+    ("Right stick is disabled for batting", BattingChecks.RightStickDisabled),
+    ("New deliberate rotations cannot be locked out by rejection or recovery", BattingChecks.Reengagement),
+    ("Four held shot modifiers produce distinct constrained finishes", BattingChecks.Shots),
+    ("Shot modes change before, during and after a stroke without re-arming", BattingChecks.LiveModes),
+    ("Y follows A to 2, then turns its blade to 3 as arms reach 12", BattingChecks.HighFinish),
+    ("Progressive trigger transfer, rear-knee lowering and opposing inputs", BattingChecks.WeightTransfer),
+    ("Anatomical reach, pitch clearance and continuous randomized movement", BattingChecks.Anatomy),
+    ("Large radial deadzone and rotation threshold reject slight movement", BattingChecks.DeadZones),
+    ("Bat orientation changes launch through collision physics", BattingChecks.PhysicsResponse),
+    ("Bat inertia, isolated momentum and impact energy remain physical", BattingChecks.CricketPhysics),
+    ("Batsman configuration survives delivery resets", BattingChecks.Configuration),
+    ("Supported tuning extremes preserve limbs and blade clearance", BattingChecks.TuningEnvelope),
+    ("Invalid and obsolete batsman settings are rejected", BattingChecks.InvalidConfiguration),
     ("Repeated inputs reproduce the same state", Determinism),
-    ("Body phases coordinate a planted step, rear-toe pivot and recovery", AnimationChecks.Footwork),
-    ("Interrupted and consecutive swings keep footwork continuous", AnimationChecks.Interruptions),
-    ("Wrist input cannot affect body, head, shoulder or footwork", AnimationChecks.Independence),
-    ("Weight transfer contributes to physical bat velocity while the head counters torso lean", AnimationChecks.WeightAndHead),
-    ("Interpolated poses retain bone lengths, pivots and clearance through snaps and resets", AnimationChecks.Interpolation),
-    ("Preview playback agrees at 30/60/144 FPS, pauses, steps, loops and recovers", AnimationChecks.Playback),
-    ("Preview reload is atomic and validates the combined movement envelope", AnimationChecks.Reload),
+    ("Foot contacts stay planted and one foot always supports the body", AnimationChecks.Footwork),
+    ("Interpolation preserves anatomy through trigger reversals", AnimationChecks.Interpolation),
+    ("Preview playback agrees at 30/60/144 FPS, pauses and steps", AnimationChecks.Playback),
+    ("Preview reload is atomic", AnimationChecks.Reload),
     ("Pitch slider preserves stump spacing and the 25 m extension", PitchLengthScaling),
     ("Preview solver cancels stale work and publishes only the latest slider values", PerformanceChecks.PreviewWorker),
+    ("Five bowler profiles classify every manual speed and include random endpoints", PracticeChecks.Profiles),
+    ("Seeded practice deliveries respect profiles, manual values and solver accuracy", PracticeChecks.Generation),
+    ("Practice generation bounds retries, cancels and reports unreachable settings", PracticeChecks.Failures),
+    ("Pending practice balls survive guide/menu changes and start the exact preview", PracticeChecks.Session),
     ("Steady physics avoids per-tick heap allocation and bounds the trail", PerformanceChecks.SteadySimulationAllocations),
     ("Impact sounds classify bat contact, suppress chatter and rotate configured variants", AudioChecks.Selection),
     ("Audio configuration rejects invalid rules, volumes and sample paths", AudioChecks.Configuration),
@@ -321,7 +324,7 @@ static void PlayableSwing()
         sim.Begin(new(32, 16, 2.15), out _);
         for (int i = 0; i < 500; i++)
         {
-            double clock = 240 - Math.Clamp((i - timing) * 8.0, 0, 270);
+            double clock = 255 - Math.Clamp((i - timing) * 8.0, 0, 255);
             sim.Tick(BattingChecks.AtClock(clock));
         }
         if (sim.BatHit) hits++;
@@ -361,33 +364,6 @@ static void InvulnerableBatter()
     }
     Check(overlappingTicks >= 2, "Regression deliveries did not cross the visible body.");
     Check(wicketHit, "The ball should still hit the wicket behind the invulnerable batter.");
-}
-static void Anatomy()
-{
-    var s = new SimulationSettings();
-    var rig = new BattingRig(s);
-    var rng = new Random(93);
-    for (int n = 0; n < 100; n++)
-    {
-        var input = new BattingInput(rng.NextDouble() * 2 - 1, rng.NextDouble() * 2 - 1, rng.NextDouble() * 2 - 1, rng.NextDouble() * 2 - 1);
-        for (int i = 0; i < 240; i++)
-        {
-            rig.Step(input, 1.0 / 960, s);
-            var p = rig.Pose;
-            Near(BattingRig.UpperArm, (p.LeadElbow - p.Shoulder).Length, 1e-9, "upper arm length");
-            Near(BattingRig.Forearm, (p.Hands - p.LeadElbow).Length, 1e-9, "forearm length");
-            Near(BattingRig.UpperArm, (p.RearElbow - p.RearShoulder).Length, 1e-8, "rear upper arm");
-            Near(BattingRig.Forearm, (p.Hands - p.RearElbow).Length, 1e-8, "rear forearm");
-            Near(BattingRig.Thigh, (p.FrontKnee - p.Hip).Length, 1e-8, "front thigh");
-            Near(BattingRig.Shin, (p.FrontAnkle - p.FrontKnee).Length, 1e-8, "front shin");
-            Near(BattingRig.Thigh, (p.BackKnee - p.Hip).Length, 1e-8, "back thigh");
-            Near(BattingRig.Shin, (p.BackAnkle - p.BackKnee).Length, 1e-8, "back shin");
-            Check(rig.ElbowFlexion is >= 0 and <= 2.357, "Elbow outside limits.");
-            var blade = p.Bat.Blade(s);
-            Check(Math.Min(blade.A.Y, blade.B.Y) >= s.BatHalfThickness - 1e-8, "Bat penetrates pitch.");
-            Check(Math.Abs(rig.ShoulderSpeed) <= 1440 * Math.PI / 180 + 1e-8, "Shoulder velocity unbounded.");
-        }
-    }
 }
 static void Determinism()
 {

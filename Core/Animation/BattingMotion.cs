@@ -2,156 +2,90 @@ namespace Cricket.Physics;
 
 public enum BattingMotionState { Ready, Backlift, ForwardSwing, FollowThrough, Recovery }
 public enum FootContact { Planted, Airborne, ToePivot }
-
-/// <summary>Toe is the shoe centreline, half a shoe thickness above the pitch.</summary>
-public readonly record struct FootPose(Vec2 Toe, double Angle, FootContact Contact)
+public readonly record struct FootPose(Vec2 Toe, double Angle, FootContact Contact, double Yaw = 0, double Depth = .14)
 {
-    public static readonly Vec2 ToeToAnkle = new(.10, .0375);
-    public Vec2 Ankle => Toe + Rotate(ToeToAnkle, Angle);
-    public Vec2 Heel => Toe + Vec2.FromAngle(Angle) * .15;
-    public static FootPose AtRest(double ankleX) =>
-        new(new(ankleX - ToeToAnkle.X, BattingRig.AnkleHeight - ToeToAnkle.Y), 0, FootContact.Planted);
-    public static Vec2 Rotate(Vec2 vector, double angle) =>
-        new(vector.X * Math.Cos(angle) - vector.Y * Math.Sin(angle), vector.X * Math.Sin(angle) + vector.Y * Math.Cos(angle));
+    public static readonly Vec2 ToeToAnkle = new(.14, .05);
+    public Vec2 Ankle { get { var offset=Rotate(ToeToAnkle,Angle); return Toe+new Vec2(offset.X*Math.Sin(Yaw),offset.Y); } }
+    public double AnkleDepth => Depth-Rotate(ToeToAnkle,Angle).X*Math.Cos(Yaw);
+    public Vec2 Heel => Toe + new Vec2(Math.Cos(Angle)*Math.Sin(Yaw),Math.Sin(Angle))*.24;
+    public static FootPose AtRest(double ankleX) => new(new(ankleX, .035), 0, FootContact.Planted);
+    public static Vec2 Rotate(Vec2 v, double a) => new(v.X * Math.Cos(a) - v.Y * Math.Sin(a), v.X * Math.Sin(a) + v.Y * Math.Cos(a));
     public static FootPose Interpolate(FootPose a, FootPose b, double t) => new(Vec2.Lerp(a.Toe, b.Toe, t),
-        a.Angle + (b.Angle - a.Angle) * t, t >= 1 ? b.Contact : t <= 0 ? a.Contact :
-        a.Contact == b.Contact ? a.Contact : a.Toe == b.Toe ? FootContact.ToePivot : FootContact.Airborne);
+        a.Angle + (b.Angle - a.Angle) * t, t == 0 ? a.Contact : t == 1 ? b.Contact :
+        a.Contact == b.Contact ? a.Contact : a.Toe == b.Toe ? FootContact.ToePivot : FootContact.Airborne,
+        a.Yaw+(b.Yaw-a.Yaw)*t,a.Depth+(b.Depth-a.Depth)*t);
 }
 
-/// <summary>Interpolate rig parameters, then rebuild IK. Never interpolate individual bone endpoints.</summary>
-public readonly record struct BattingFrame(Vec2 Hip, Vec2 Shoulder, double ShoulderAngle, double ElbowFlexion,
-    double WristAngle, FootPose FrontFoot, FootPose RearFoot, double HeadAngle, BattingMotionState State)
+/// <summary>Compact replay state. Reconstruct constrained joints after interpolating controls.</summary>
+public readonly record struct BattingFrame(double SwingProgress, double WeightShift, ShotStyle Shot,
+    FootPose FrontFoot, FootPose RearFoot, BattingMotionState State)
 {
     public static BattingFrame Interpolate(BattingFrame a, BattingFrame b, double fraction)
     {
         double t = Math.Clamp(fraction, 0, 1);
-        return new(Vec2.Lerp(a.Hip, b.Hip, t), Vec2.Lerp(a.Shoulder, b.Shoulder, t),
-            Lerp(a.ShoulderAngle, b.ShoulderAngle), Lerp(a.ElbowFlexion, b.ElbowFlexion), Lerp(a.WristAngle, b.WristAngle),
+        return new(a.SwingProgress + (b.SwingProgress - a.SwingProgress) * t,
+            a.WeightShift + (b.WeightShift - a.WeightShift) * t,
+            t < 1 ? a.Shot : b.Shot,
             FootPose.Interpolate(a.FrontFoot, b.FrontFoot, t), FootPose.Interpolate(a.RearFoot, b.RearFoot, t),
-            Lerp(a.HeadAngle, b.HeadAngle), t < 1 ? a.State : b.State);
-        double Lerp(double x, double y) => x + (y - x) * t;
+            t < 1 ? a.State : b.State);
     }
 }
-
-/// <summary>Supporting movement only. No input from the wrist and no feedback into swing control.</summary>
+/// <summary>Bounded damped weight shift and lift/plant steps. A planted foot never translates.</summary>
 internal sealed class BattingMotion
 {
-    private readonly BattingSettings _settings;
-    private readonly double _minimumShift, _maximumShift, _minimumCrouch, _maximumCrouch;
-    private DampedValue _shift, _lean, _crouch, _head, _heel, _step;
-    private bool _stroke, _returning, _wasForward, _wasSnapping;
-    private double _stepTarget, _stepElapsed;
-    public BattingMotionState State { get; private set; }
-    public FootPose FrontFoot { get; private set; } = FootPose.AtRest(BattingRig.FrontFootX);
-    public FootPose RearFoot { get; private set; } = FootPose.AtRest(BattingRig.BackFootX);
-
-    public BattingMotion(BattingSettings settings, double clock)
+    private readonly BodySettings _settings;
+    private double _weight, _velocity;
+    private StepFoot _front = new(BattingRig.FrontFootX), _rear = new(BattingRig.BackFootX);
+    public BattingMotion(BodySettings settings) => _settings = settings;
+    public BattingFrame Step(double requestedWeight, double swing, double swingSpeed, ShotStyle shot, double dt)
     {
-        _settings = settings;
-        _minimumShift = settings.Stance.PoseBySwing.Min(k => k.HipShiftMetres) - settings.BodyMotion.HipTransferMetres;
-        _maximumShift = settings.Stance.PoseBySwing.Max(k => k.HipShiftMetres);
-        _minimumCrouch = settings.Stance.PoseBySwing.Min(k => k.CrouchMetres);
-        _maximumCrouch = settings.Stance.PoseBySwing.Max(k => k.CrouchMetres) + settings.BodyMotion.AdditionalCrouchMetres;
-        _shift.Value = ClockCurve.Sample(settings.Stance.PoseBySwing, clock, k => k.HipShiftMetres);
-        _lean.Value = ClockCurve.Sample(settings.Stance.PoseBySwing, clock, k => k.ShoulderLeanMetres);
-        _crouch.Value = ClockCurve.Sample(settings.Stance.PoseBySwing, clock, k => k.CrouchMetres);
-        _head.Value = HeadTarget();
-    }
-
-    public void Step(double clock, double forwardSpeed, bool snapping, double dt)
-    {
-        var s = _settings;
-        bool forward = !snapping && forwardSpeed > s.Footwork.TriggerDegreesPerSecond;
-        bool reverse = !snapping && forwardSpeed < -3;
-        double phase = ClockCurve.Wrap(s.Swing.Snap.EndClockDegrees - clock);
-        bool atReady = phase < .05 && Math.Abs(forwardSpeed) < 3;
-        if (_wasSnapping && !snapping || atReady && _stroke || reverse && FrontFoot.Contact == FootContact.Airborne && _stroke)
+        double omega = 6 / _settings.TransferSeconds;
+        double error = _weight - requestedWeight, decay = Math.Exp(-omega * dt);
+        double temp = (_velocity + omega * error) * dt;
+        double next = Math.Clamp(requestedWeight + (error + temp) * decay, -1, 1);
+        _weight += Math.Clamp(next - _weight, -2.5 * dt, 2.5 * dt);
+        _velocity = Math.Clamp((_velocity - omega * temp) * decay, -2.5, 2.5);
+        if (Math.Abs(_weight - requestedWeight) < 1e-6 && Math.Abs(_velocity) < 1e-5)
+        { _weight = requestedWeight; _velocity = 0; }
+        double front = Math.Max(0, _weight), back = Math.Max(0,-_weight);
+        double forwardRequest=Math.Max(0,requestedWeight), backwardRequest=Math.Max(0,-requestedWeight);
+        // Move the receiving foot first. The lightly loaded front foot may then gather toward the rear leg.
+        if (backwardRequest>0)
         {
-            _stroke = false;
-            _returning = true;
-            SetStepTarget(0);
+            _rear.Advance(BattingRig.BackFootX+_settings.BackStrideMetres*backwardRequest,front*_settings.RearHeelDegrees*Math.PI/180,front*1.2+back*.12,dt,_settings,!_front.Moving);
+            _front.Advance(BattingRig.FrontFootX+.08*backwardRequest,back*.16,front+back*.2,dt,_settings,!_rear.Moving);
         }
-        if (forward && !_wasForward)
+        else
         {
-            _stroke = true;
-            _returning = false;
-            SetStepTarget(1);
+            _front.Advance(BattingRig.FrontFootX-_settings.FrontStrideMetres*forwardRequest,back*.16,front+back*.2,dt,_settings,!_rear.Moving);
+            _rear.Advance(BattingRig.BackFootX,front*_settings.RearHeelDegrees*Math.PI/180,front*1.2+back*.12,dt,_settings,!_front.Moving);
         }
-        _wasForward = forward;
-        _wasSnapping = snapping;
-
-        double duration = _stepTarget == 1 ? s.Footwork.StepSeconds : s.BodyMotion.RecoverySeconds;
-        _stepElapsed += dt;
-        // An exact critically damped update retains velocity when a step is interrupted.
-        _step.Advance(_stepTarget, duration, dt, 12);
-        _step.Constrain(0, 1);
-        if (_stepElapsed >= duration && Math.Abs(_step.Value - _stepTarget) < .0002)
-            _step = new() { Value = _stepTarget };
-        double progress = _step.Value;
-        Vec2 frontToe = FootPose.AtRest(BattingRig.FrontFootX).Toe +
-            new Vec2(-s.Footwork.StepMetres * progress, s.Footwork.LiftMetres * Math.Sin(Math.PI * progress));
-        bool planted = progress == _stepTarget && _step.Velocity == 0;
-        FrontFoot = new(frontToe, 0, planted ? FootContact.Planted : FootContact.Airborne);
-        if (_returning && planted && progress == 0) _returning = false;
-
-        State = snapping ? BattingMotionState.Recovery : reverse ? BattingMotionState.Backlift :
-            _returning ? BattingMotionState.Recovery :
-            !snapping && forwardSpeed > 3 ? (phase >= 360 - s.Swing.Snap.ArcDegrees - 60 ?
-                BattingMotionState.FollowThrough : BattingMotionState.ForwardSwing) :
-            _stroke ? BattingMotionState.FollowThrough : BattingMotionState.Ready;
-        double cap = ClockCurve.Sample(s.Swing.SpeedBySwing, clock, k => k.MaxSpeedDegreesPerSecond);
-        double intensity = snapping ? 0 : Math.Clamp(forwardSpeed / cap, 0, 1);
-        double settling = State == BattingMotionState.Recovery ? s.BodyMotion.RecoverySeconds : s.BodyMotion.SettlingSeconds;
-        _shift.Advance(ClockCurve.Sample(s.Stance.PoseBySwing, clock, k => k.HipShiftMetres) -
-            s.BodyMotion.HipTransferMetres * intensity, settling, dt);
-        _lean.Advance(ClockCurve.Sample(s.Stance.PoseBySwing, clock, k => k.ShoulderLeanMetres), settling, dt);
-        _crouch.Advance(ClockCurve.Sample(s.Stance.PoseBySwing, clock, k => k.CrouchMetres) +
-            s.BodyMotion.AdditionalCrouchMetres * intensity, settling, dt);
-        // Changing the recovery damping must never carry momentum outside the validated envelope.
-        _shift.Constrain(_minimumShift, _maximumShift);
-        _crouch.Constrain(_minimumCrouch, _maximumCrouch);
-        _heel.Advance(_stroke && planted ? s.Footwork.RearHeelDegrees * Math.PI / 180 : 0, settling, dt);
-        _heel.Constrain(0, s.Footwork.RearHeelDegrees * Math.PI / 180);
-        if (Math.Abs(_heel.Value) < 1e-8 && Math.Abs(_heel.Velocity) < 1e-7) _heel = default;
-        RearFoot = FootPose.AtRest(BattingRig.BackFootX) with
+        var state = swingSpeed < -.002 ? (swing < .2 ? BattingMotionState.Recovery : BattingMotionState.Backlift) : swingSpeed > .002 ?
+            swing > .7 ? BattingMotionState.FollowThrough : BattingMotionState.ForwardSwing :
+            swing < .005 ? BattingMotionState.Ready : BattingMotionState.FollowThrough;
+        return new(swing, _weight, shot, _front.Pose, _rear.Pose, state);
+    }
+    private struct StepFoot(double ankleX)
+    {
+        private Vec2 _from, _to;
+        private double _time, _duration;
+        public bool Moving { get; private set; }
+        public FootPose Pose { get; private set; } = FootPose.AtRest(ankleX);
+        public void Advance(double targetAnkleX, double angle, double yaw, double dt, BodySettings settings, bool canLift)
         {
-            Angle = _heel.Value,
-            Contact = _heel.Value > 0 ? FootContact.ToePivot : FootContact.Planted
-        };
-        _head.Advance(HeadTarget(), s.HeadMotion.SettlingSeconds, dt);
-    }
-
-    public BattingFrame Frame(double shoulderAngle, double flexion, double wristAngle)
-    {
-        Vec2 hip = new(PitchDimensions.BatterReferenceX + _shift.Value, _settings.Stance.HipHeightMetres - _crouch.Value);
-        return new(hip, hip + new Vec2(_lean.Value, _settings.Stance.TorsoHeightMetres), shoulderAngle, flexion,
-            wristAngle, FrontFoot, RearFoot, _head.Value, State);
-    }
-
-    private double HeadTarget()
-    {
-        double limit = _settings.HeadMotion.CompensationDegrees * Math.PI / 180;
-        return Math.Clamp(Math.Atan2(_lean.Value, _settings.Stance.TorsoHeightMetres), -limit, limit);
-    }
-    private void SetStepTarget(double target)
-    {
-        if (_stepTarget == target) return;
-        _stepTarget = target;
-        _stepElapsed = 0;
-    }
-
-    private struct DampedValue
-    {
-        public double Value, Velocity;
-        public void Constrain(double min, double max)
-        {
-            if (Value < min || Value > max) { Value = Math.Clamp(Value, min, max); Velocity = 0; }
-        }
-        public void Advance(double target, double seconds, double dt, double decay = 6)
-        {
-            double w = decay / seconds, error = Value - target, c = Velocity + w * error, e = Math.Exp(-w * dt);
-            Value = target + (error + c * dt) * e;
-            Velocity = (Velocity - w * c * dt) * e;
+            Vec2 target = FootPose.AtRest(targetAnkleX).Toe;
+            if (!Moving && canLift && Math.Abs(target.X - Pose.Toe.X) > (targetAnkleX == ankleX ? .00001 : .018))
+            { Moving = true; _from = Pose.Toe; _to = target; _time = 0;
+                _duration=Math.Max(settings.StepSeconds,Math.Abs(_to.X-_from.X)*1.875/3.2); }
+            if (Moving)
+            {
+                _time = Math.Min(1, _time + dt / _duration);
+                double ease = _time * _time * _time * (10 + _time * (-15 + 6 * _time));
+                Vec2 toe = Vec2.Lerp(_from, _to, ease) + new Vec2(0, settings.StepLiftMetres * Math.Pow(Math.Sin(Math.PI * _time), 2));
+                Moving = _time < 1;
+                Pose = new(toe, angle, Moving ? FootContact.Airborne : angle > .001 ? FootContact.ToePivot : FootContact.Planted,yaw);
+            }
+            else Pose = Pose with { Angle = angle, Yaw = yaw, Contact = angle > .001 ? FootContact.ToePivot : FootContact.Planted };
         }
     }
 }

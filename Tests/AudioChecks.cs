@@ -82,7 +82,7 @@ internal static class AudioChecks
             var selector = new ImpactSoundSelector(settings);
             for (int tick = 0; tick < 500; tick++)
             {
-                simulation.Tick(BattingChecks.AtClock(240 - Math.Clamp((tick - timing) * 8.0, 0, 270)));
+                simulation.Tick(BattingChecks.AtClock(255 - Math.Clamp((tick - timing) * 8.0, 0, 255)));
                 foreach (var contact in simulation.Events)
                 {
                     Require(double.IsFinite(contact.ImpactSpeed) && contact.ImpactSpeed >= 0, "Invalid closing speed.");

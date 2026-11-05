@@ -46,6 +46,15 @@ public sealed class Simulation
     public bool Begin(DeliverySettings request, out string error)
     {
         if (!DeliverySolver.TrySolve(request, Settings, out var plan, out error)) return false;
+        return BeginPrepared(plan!, out error);
+    }
+
+    /// <summary>Starts a solver-produced plan for these physics settings without solving on the game thread.</summary>
+    public bool BeginPrepared(DeliveryPlan plan, out string error)
+    {
+        error = plan.Settings.ValidationError ?? "";
+        if (plan.Physics != Settings) error = "Prepare this delivery again using the current physics settings.";
+        if (error.Length != 0) return false;
         Plan = plan;
         Batter = new(Settings, Batting);
         PreviousPose = Batter.Pose;
@@ -76,15 +85,22 @@ public sealed class Simulation
         PreviousBall = Ball;
         PreviousPose = Batter.Pose;
         PreviousFrame = Batter.Frame;
+        // Input is sampled once per physics tick, not once per collision substep.
+        // Spread its pose change across those substeps so velocity is delta / Tick, not delta / (Tick / 8).
+        Batter.Step(input, SimulationSettings.Tick, Settings);
+        PreviousFrame=Batter.MotionFromFrame;
+        if(Batter.BeganStroke) PreviousPose=BattingRig.BuildPose(PreviousFrame,Batting,Settings);
+        // Free rehearsal before bowling still accepts batting input; no ball/time/statistics advance.
         if (Phase == DeliveryPhase.Setup) return;
         double dt = SimulationSettings.Tick / Settings.Substeps;
+        BatPose from = PreviousPose.Bat;
         for (int i = 0; i < Settings.Substeps; i++)
         {
-            BatPose from = Batter.Pose.Bat;
-            Batter.Step(input, dt, Settings);
             if (Phase == DeliveryPhase.Live)
             {
-                AdvanceBall(dt, from, Batter.Pose.Bat);
+                BatPose to=Batter.SampleBatMotion(PreviousPose.Bat,(i+1.0)/Settings.Substeps);
+                AdvanceBall(dt, from, to);
+                from=to;
                 Statistics.Observe(Ball);
             }
         }

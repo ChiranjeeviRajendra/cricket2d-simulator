@@ -3,37 +3,54 @@ using Godot;
 
 namespace Cricket2D;
 
-/// <summary>Input bindings are named actions; the core never reads hardware directly.</summary>
+/// <summary>Named input actions; right-stick axes are deliberately not registered for batting.</summary>
 public static class BattingControls
 {
-    private static readonly StringName SwingLeft = "swing_left", SwingRight = "swing_right",
-        SwingUp = "swing_up", SwingDown = "swing_down", BatLeft = "bat_left", BatRight = "bat_right",
-        BatUp = "bat_up", BatDown = "bat_down";
+    private static readonly StringName SwingLeft="swing_left", SwingRight="swing_right",
+        SwingUp="swing_up", SwingDown="swing_down", FrontWeight="front_weight", BackWeight="back_weight",
+        Defence="shot_defence", Push="shot_push", HighFinish="shot_high_finish";
     public static void Register()
     {
-        Axis("swing_left", Key.A, JoyAxis.LeftX, -1);
-        Axis("swing_right", Key.D, JoyAxis.LeftX, 1);
-        Axis("swing_up", Key.W, JoyAxis.LeftY, -1);
-        Axis("swing_down", Key.S, JoyAxis.LeftY, 1);
-        Axis("bat_left", Key.Left, JoyAxis.RightX, -1);
-        Axis("bat_right", Key.Right, JoyAxis.RightX, 1);
-        Axis("bat_up", Key.Up, JoyAxis.RightY, -1);
-        Axis("bat_down", Key.Down, JoyAxis.RightY, 1);
+        Axis("swing_left",Key.A,JoyAxis.LeftX,-1);
+        Axis("swing_right",Key.D,JoyAxis.LeftX,1);
+        Axis("swing_up",Key.W,JoyAxis.LeftY,-1);
+        Axis("swing_down",Key.S,JoyAxis.LeftY,1);
+        Axis("front_weight",Key.E,JoyAxis.TriggerRight,1);
+        Axis("back_weight",Key.Q,JoyAxis.TriggerLeft,1);
+        Button("shot_defence",Key.J,JoyButton.X);
+        Button("shot_full_drive",Key.K,JoyButton.A);
+        Button("shot_push",Key.L,JoyButton.B);
+        Button("shot_high_finish",Key.I,JoyButton.Y);
     }
 
     public static BattingInput Read()
     {
-        // The core applies the configurable radial dead zones exactly once.
-        Vector2 left = Godot.Input.GetVector(SwingLeft, SwingRight, SwingUp, SwingDown, 0);
-        Vector2 right = Godot.Input.GetVector(BatLeft, BatRight, BatUp, BatDown, 0);
-        return new(left.X, left.Y, right.X, right.Y);
+        Vector2 left=Godot.Input.GetVector(SwingLeft,SwingRight,SwingUp,SwingDown,0);
+        // A deterministic priority resolves accidental simultaneous button presses.
+        ShotStyle shot=Godot.Input.IsActionPressed(Defence)?ShotStyle.Defence:
+            Godot.Input.IsActionPressed(Push)?ShotStyle.Push:
+            Godot.Input.IsActionPressed(HighFinish)?ShotStyle.HighFinish:
+            ShotStyle.FullDrive;
+        return new(left.X,left.Y,0,0,Godot.Input.GetActionRawStrength(FrontWeight),
+            Godot.Input.GetActionRawStrength(BackWeight),shot);
     }
 
-    private static void Axis(string name, Key key, JoyAxis axis, float direction)
+    public static bool IsPause(InputEvent evt) =>
+        evt is InputEventJoypadButton { Pressed:true, ButtonIndex:JoyButton.Start } ||
+        evt is InputEventKey { Pressed:true, Echo:false, Keycode:Key.Space };
+
+    private static void Axis(string name,Key key,JoyAxis axis,float direction)
     {
-        if (InputMap.HasAction(name)) return;
-        InputMap.AddAction(name, 0);
-        InputMap.ActionAddEvent(name, new InputEventKey { PhysicalKeycode = key });
-        InputMap.ActionAddEvent(name, new InputEventJoypadMotion { Axis = axis, AxisValue = direction, Device = -1 });
+        if(InputMap.HasAction(name))return;
+        InputMap.AddAction(name,0);
+        InputMap.ActionAddEvent(name,new InputEventKey { PhysicalKeycode=key });
+        InputMap.ActionAddEvent(name,new InputEventJoypadMotion { Axis=axis,AxisValue=direction,Device=-1 });
+    }
+    private static void Button(string name,Key key,JoyButton button)
+    {
+        if(InputMap.HasAction(name))return;
+        InputMap.AddAction(name);
+        InputMap.ActionAddEvent(name,new InputEventKey { PhysicalKeycode=key });
+        InputMap.ActionAddEvent(name,new InputEventJoypadButton { ButtonIndex=button,Device=-1 });
     }
 }
