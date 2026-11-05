@@ -1,0 +1,36 @@
+{
+  "vertices": 13640,
+  "polygons": 13556,
+  "bones": 18,
+  "materials": 10,
+  "source_actions": {
+    "BackFoot": [
+      1.0,
+      211.0
+    ],
+    "Defence": [
+      1.0,
+      211.0
+    ],
+    "Fast": [
+      1.0,
+      211.0
+    ],
+    "FrontFoot": [
+      1.0,
+      211.0
+    ],
+    "FullDrive": [
+      1.0,
+      211.0
+    ],
+    "HighFinish": [
+      1.0,
+      211.0
+    ],
+    "Push": [
+      1.0,
+      211.0
+    ]
+  }
+}

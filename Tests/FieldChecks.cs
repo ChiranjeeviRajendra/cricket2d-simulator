@@ -18,7 +18,8 @@ internal static class FieldChecks
         Near(40, g.LeftX - PitchDimensions.BatterReferenceX, 1e-12, "Left distance");
         Near(75, PitchDimensions.BatterReferenceX - g.RightX, 1e-12, "Right distance");
         Near(1.5, settings.Barricade.HeightMetres, 0, "Inner barricade height");
-        Near(25, settings.OuterBarricade.HeightMetres, 0, "Outer barricade height");
+        Near(settings.OuterBarricade.HeightMetres, g.Surfaces.Max(s => Math.Max(s.Edge.A.Y, s.Edge.B.Y)),
+            1e-12, "Configured outer barricade height reaches collision geometry");
         for (int i = 0; i < 180; i++)
         {
             double a = i * Math.Tau / 180;

@@ -6,7 +6,7 @@ config/name="Cricket 2D | The Practice Ground"
 run/main_scene="res://Scenes/Main.tscn"
 config/features=PackedStringArray("4.7", "C#", "GL Compatibility")
 config/icon="res://Assets/icon.svg"
-run/max_fps=120
+run/max_fps=0
 
 [display]
 window/size/viewport_width=1440

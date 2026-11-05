@@ -36,10 +36,10 @@ public static class VisualTheme
         return theme;
     }
 
-    public static void NavigationButton(Button button)
+    public static void NavigationButton(Button button, int padding = 14)
     {
-        var normal = Box(Panel, Border, 8, 14);
-        var focused = Box(Ink, Ink, 8, 14);
+        var normal = Box(Panel, Border, 8, padding);
+        var focused = Box(Ink, Ink, 8, padding);
         void Refresh()
         {
             bool selected = button.HasFocus();

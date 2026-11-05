@@ -18,7 +18,10 @@ public readonly record struct DeliverySettings(double Speed, double PitchingLeng
 }
 
 public sealed record DeliveryPlan(DeliverySettings Settings, BallState Release, double Angle,
-    double FlightTime, double PredictedPitchX, IReadOnlyList<Vec2> Preview);
+    double FlightTime, double PredictedPitchX, IReadOnlyList<Vec2> Preview)
+{
+    internal SimulationSettings? Physics { get; init; }
+}
 
 public static class DeliverySolver
 {
@@ -57,7 +60,7 @@ public static class DeliverySolver
         double angle = (lowAngle + highAngle) / 2;
         var preview = new List<Vec2>();
         var landing = FirstPitch(request, angle, s, cancellation, preview);
-        plan = new(request, Release(request, angle), angle, landing.Time, landing.X, preview);
+        plan = new(request, Release(request, angle), angle, landing.Time, landing.X, preview) { Physics = s };
         return true;
     }
 

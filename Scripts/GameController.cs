@@ -16,7 +16,7 @@ public partial class GameController : Node2D
     private BattingSettings _batting = null!;
     private FieldSettings _field = null!;
     private bool _smokeMenuStarted, _smokeMenuComplete, _smokeExitRequested;
-    private bool _paused;
+    private bool _paused, _userPaused, _focusPaused;
     private bool _smokeTest;
     private int _smokeTicks;
     private bool _smokeReleased;
@@ -25,7 +25,7 @@ public partial class GameController : Node2D
     private bool _smokeControlsValid;
     private bool _capturePreview;
     private PerformanceRun? _performanceRun;
-    private DeliveryPreviewWorker? _previewWorker;
+    private PracticeSession? _practice;
     private ImpactAudio? _audio;
     private bool _quitting;
 
@@ -107,13 +107,14 @@ public partial class GameController : Node2D
             _ground.Show();
             _hud.Show();
             _ground.InterpolationPaused = _paused;
+            if (_hud.DeliveryPanel.Visible) _hud.DeliveryPanel.Open();
             return;
         }
         _simulation = new(_settings, _batting, _field);
         _audio = new ImpactAudio();
         AddChild(_audio);
         _audio.SetPaused(_paused);
-        _previewWorker = new(_settings);
+        _practice = new(_settings, _smokeTest || _capturePreview ? 8128 : null);
         _ground = new GroundView { Simulation = _simulation };
         AddChild(_ground);
         var canvas = new CanvasLayer();
@@ -122,11 +123,13 @@ public partial class GameController : Node2D
         canvas.AddChild(_hud);
         _hud.DeliveryPanel.BeginRequested += Begin;
         _hud.DeliveryPanel.SettingsChanged += UpdatePreview;
-        UpdatePreview(_hud.DeliveryPanel.Values);
+        _hud.DeliveryPanel.GuidesChanged += guides => { _practice.Guides = guides; _ground.Guides = guides; };
+        SyncPendingDelivery();
     }
 
     private void OpenMainMenu()
     {
+        _simulation.Batter.SuspendGesture();
         _audio?.Stop();
         _ground.InterpolationPaused = true;
         _ground.Hide();
@@ -143,27 +146,38 @@ public partial class GameController : Node2D
             return;
         }
         if (_simulation == null || _menu.Visible || _paused && !_smokeTest && _performanceRun == null) return;
-        _simulation.Tick(_smokeTest ? default : _performanceRun?.Input ?? BattingControls.Read());
-        _audio?.ConsumeContacts(_simulation);
+        // Settings navigation must not become a batting gesture. Idle practice outside the panel can swing.
+        if (!_hud.DeliveryPanel.Visible)
+        {
+            _simulation.Tick(_smokeTest ? default : _performanceRun?.Input ?? BattingControls.Read());
+            _audio?.ConsumeContacts(_simulation);
+        }
         if (_smokeTest) SmokeTick();
     }
 
     public override void _Process(double delta)
     {
-        if (_previewWorker != null && _previewWorker.Poll(out var plan)) _ground.Preview = plan;
+        if (_practice != null && _practice.Poll()) SyncPendingDelivery();
         if (_simulation != null && _hud.IsVisibleInTree()) _hud.Refresh(_simulation);
     }
 
-    public override void _ExitTree() => _previewWorker?.Dispose();
+    public override void _ExitTree() => _practice?.Dispose();
 
     private void SetFocusPaused(bool paused)
     {
-        _paused = paused;
-        if (_ground != null) _ground.InterpolationPaused = paused;
-        _audio?.SetPaused(paused);
-        // Automated captures/benchmarks deliberately run without user interaction.
+        _focusPaused=paused;
+        RefreshPause();
         if (!_capturePreview && !_smokeTest && _performanceRun == null)
-            Engine.MaxFps = paused ? 30 : 120;
+            Engine.MaxFps=paused?30:0;
+    }
+
+    private void RefreshPause()
+    {
+        _paused=_focusPaused || _userPaused;
+        if(_paused && _simulation != null) _simulation.Batter.SuspendGesture();
+        if(_ground != null) _ground.InterpolationPaused=_paused || _menu.Visible;
+        _audio?.SetPaused(_paused);
+        _hud?.SetPaused(_userPaused);
     }
 
     public override void _Input(InputEvent evt)
@@ -182,46 +196,68 @@ public partial class GameController : Node2D
             return;
         }
         if (_hud == null) return;
-        bool accept = evt is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.A } ||
-            evt is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Enter or Key.KpEnter };
+        if (BattingControls.IsPause(evt) && (!_hud.DeliveryPanel.Visible || evt is InputEventJoypadButton))
+        {
+            _userPaused=!_userPaused;
+            RefreshPause();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
         bool back = evt is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.B } ||
             evt is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape };
-        if (back || accept)
+        if (_hud.DeliveryPanel.Visible)
         {
-            if (back) OpenMainMenu();
-            else if (_hud.DeliveryPanel.Visible) _hud.DeliveryPanel.Begin();
+            if (back)
+            {
+                if (!_hud.DeliveryPanel.CloseBowlerList()) OpenMainMenu();
+                GetViewport().SetInputAsHandled();
+            }
+            else if (_hud.DeliveryPanel.HandleInput(evt)) GetViewport().SetInputAsHandled();
+            return;
+        }
+        bool setup=evt is InputEventJoypadButton { Pressed:true,ButtonIndex:JoyButton.Back } ||
+            evt is InputEventKey { Pressed:true,Echo:false,Keycode:Key.Enter or Key.KpEnter };
+        bool menu=evt is InputEventKey { Pressed:true,Echo:false,Keycode:Key.Escape };
+        if (menu || setup)
+        {
+            if (menu) OpenMainMenu();
             else OpenSetup();
             GetViewport().SetInputAsHandled();
             return;
         }
-        if (evt is InputEventJoypadButton { Pressed: true } joy)
-        {
-            if (_hud.DeliveryPanel.Visible) _hud.DeliveryPanel.HandleController(joy.ButtonIndex);
-            else return;
-            GetViewport().SetInputAsHandled();
-            return; // One press either opens the panel or begins a delivery, never both.
-        }
         if (evt is not InputEventKey { Pressed: true, Echo: false } key) return;
-        if (key.Keycode == Key.T && !_hud.DeliveryPanel.Visible) _ground.ShowTrajectory = !_ground.ShowTrajectory;
+        if (key.Keycode == Key.T) _ground.ShowBallTrail = !_ground.ShowBallTrail;
     }
 
-    private void Begin(DeliverySettings request)
+    private void Begin()
     {
-        if (!_simulation.Begin(request, out string error)) { _hud.DeliveryPanel.ShowError(error); return; }
+        if (!_practice!.TryBegin(_simulation, out string error))
+        { _hud.DeliveryPanel.SetPreparation(_practice.IsPreparing, false, error); return; }
+        _userPaused=false;
+        RefreshPause();
         _audio?.ResetDelivery();
         _hud.DeliveryPanel.Hide();
     }
 
     private void OpenSetup()
     {
+        _simulation.Batter.SuspendGesture();
         _audio?.Stop();
         _simulation.ReturnToSetup();
+        _practice!.OpenNextDelivery();
+        SyncPendingDelivery();
         _hud.DeliveryPanel.Open();
     }
 
-    private void UpdatePreview(DeliverySettings request)
+    private void UpdatePreview(PracticeBowlingSettings request)
     {
-        _previewWorker!.Request(request);
+        if (_practice!.Configure(request)) SyncPendingDelivery();
+    }
+
+    private void SyncPendingDelivery()
+    {
+        _ground.Preview = _practice!.PendingPlan;
+        _hud.DeliveryPanel.SetPreparation(_practice.IsPreparing, _practice.CanBowl, _practice.Error);
     }
 
     private async void QuitGame()

@@ -8,12 +8,14 @@ namespace Cricket2D;
 public partial class GroundView : Node2D
 {
     public Simulation Simulation { get; set; } = null!;
-    private bool _showTrajectory = true, _diagnostics, _viewDirty = true;
+    private bool _showBallTrail = true, _diagnostics, _viewDirty = true;
+    private PracticeGuides _guides = new(true, true);
     private BattingFrame _lastFrame;
     private DeliveryPhase _lastPhase;
     private DeliveryPlan? _preview;
-    private Func<Vec2, Vector2> _worldToScreen = null!;
-    public bool ShowTrajectory { get => _showTrajectory; set { _viewDirty |= _showTrajectory != value; _showTrajectory = value; } }
+    private BatterModel _batter = null!;
+    public bool ShowBallTrail { get => _showBallTrail; set { _viewDirty |= _showBallTrail != value; _showBallTrail = value; } }
+    public PracticeGuides Guides { get => _guides; set { _viewDirty |= _guides != value; _guides = value; } }
     public bool Diagnostics { get => _diagnostics; set { _viewDirty |= _diagnostics != value; _diagnostics = value; } }
     private double _pausedFraction;
     private long _resumeTick = -1;
@@ -51,7 +53,9 @@ public partial class GroundView : Node2D
         PhysicsInterpolationMode = PhysicsInterpolationModeEnum.Off;
         TextureFilter = TextureFilterEnum.LinearWithMipmaps;
         _fieldDrawing = new(Simulation.Field);
-        _worldToScreen = W;
+        _batter = new BatterModel();
+        AddChild(_batter);
+        GetViewport().SizeChanged += OnViewResized;
     }
 
     public override void _Process(double delta)
@@ -64,6 +68,9 @@ public partial class GroundView : Node2D
         _viewDirty = false;
         if (TrackedBallPosition is Vec2 ball) _camera.Fit(ball);
         else _camera.Reset();
+        // Show the newest authoritative bat pose without adding an interpolation tick of input latency.
+        _batter.UpdatePose(Simulation.Batter.Pose, Simulation.Settings,
+            PixelsPerMetre, GetViewport().GetStretchTransform().Scale.X);
         QueueRedraw();
     }
 
@@ -76,7 +83,12 @@ public partial class GroundView : Node2D
         QueueRedraw();
     }
 
-    public override void _ExitTree() => _fieldDrawing?.Dispose();
+    private void OnViewResized() => _viewDirty = true;
+    public override void _ExitTree()
+    {
+        GetViewport().SizeChanged -= OnViewResized;
+        _fieldDrawing?.Dispose();
+    }
 
     public override void _Draw()
     {
@@ -134,10 +146,13 @@ public partial class GroundView : Node2D
     {
         var plan = Simulation.Phase == DeliveryPhase.Setup ? Preview : Simulation.Plan;
         if (plan == null) return;
-        Vector2 target = W(new(plan.Settings.PitchingLength, 0));
-        DrawLine(target + new Vector2(-8, 0), target + new Vector2(8, 0), VisualTheme.OnDark, 3, true);
-        DrawLine(target + new Vector2(0, 4), target + new Vector2(0, 22), VisualTheme.OnDark, 1, true);
-        if (Simulation.Phase != DeliveryPhase.Live && ShowTrajectory)
+        if (Guides.ShowPitchPosition)
+        {
+            Vector2 target = W(new(plan.Settings.PitchingLength, 0));
+            DrawLine(target + new Vector2(-8, 0), target + new Vector2(8, 0), VisualTheme.OnDark, 3, true);
+            DrawLine(target + new Vector2(0, 4), target + new Vector2(0, 22), VisualTheme.OnDark, 1, true);
+        }
+        if (Simulation.Phase != DeliveryPhase.Live && Guides.ShowPredictedTrajectory)
         {
             for (int i = 1; i < plan.Preview.Count; i += 2)
                 DrawLine(W(plan.Preview[i - 1]), W(plan.Preview[i]), new Color(0.78f, 0.93f, 0.58f, 0.24f), 1, true);
@@ -146,8 +161,7 @@ public partial class GroundView : Node2D
 
     private void Batter()
     {
-        BattingFrame frame = BattingFrame.Interpolate(Simulation.PreviousFrame, Simulation.Batter.Frame, RenderFraction);
-        BatterDrawing.Draw(this, BattingRig.BuildPose(frame, Simulation.Batting), Simulation.Settings, _worldToScreen, PixelsPerMetre, Diagnostics);
+        _batter.Draw(this, W(new(PitchDimensions.BatterReferenceX, 0)), PixelsPerMetre);
     }
     private void Bowler()
     {
@@ -193,7 +207,7 @@ public partial class GroundView : Node2D
 
     private void Ball()
     {
-        if (ShowTrajectory)
+        if (ShowBallTrail)
         {
             var trail = Simulation.Trail;
             for (int i = 1; i < trail.Count; i++)

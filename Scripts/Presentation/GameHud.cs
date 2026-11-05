@@ -3,7 +3,7 @@ using Godot;
 
 namespace Cricket2D;
 
-/// <summary>Compact delivery telemetry; practice navigation is handled by A/Enter and B/Escape.</summary>
+/// <summary>Delivery telemetry and pause status. Face buttons are reserved for shots during play.</summary>
 public partial class GameHud : Control
 {
     public DeliveryPanel DeliveryPanel { get; private set; } = null!;
@@ -12,6 +12,7 @@ public partial class GameHud : Control
     private Label _maxLength = null!;
     private Label _maxHeight = null!;
     private Label _fps = null!;
+    private Label _pauseNotice = null!;
     private double _lastSpeed = double.NaN, _lastMaxSpeed = double.NaN,
         _lastLength = double.NaN, _lastHeight = double.NaN, _lastFps = double.NaN;
 
@@ -25,6 +26,14 @@ public partial class GameHud : Control
         _maxLength = Stat("MAX LENGTH FROM BATTER", "0.00 m", 414);
         _maxHeight = Stat("MAX HEIGHT ABOVE GROUND", "0.00 m", 602);
         _fps = Stat("FPS", "—", 790);
+        _pauseNotice=VisualTheme.Label("PAUSED • Menu/Start or Space to resume",24,VisualTheme.OnDark);
+        _pauseNotice.Position=new(380,110);
+        _pauseNotice.Hide();
+        AddChild(_pauseNotice);
+        var controls=VisualTheme.Label("LS: 8:30 → 6 → 3 → 12 • A/default: straight  X: wall at 2  B: 1:30 / blade at 4  Y: sky • Menu: pause • View: settings",15,VisualTheme.OnDark);
+        controls.Position=new(38,852);
+        controls.MouseFilter=MouseFilterEnum.Ignore;
+        AddChild(controls);
 
         DeliveryPanel = new DeliveryPanel();
         AddChild(DeliveryPanel);
@@ -40,6 +49,8 @@ public partial class GameHud : Control
         SetValue(_maxHeight, sim.Statistics.MaxHeight, 2, " m", ref _lastHeight);
         SetValue(_fps, Engine.GetFramesPerSecond(), 0, "", ref _lastFps);
     }
+
+    public void SetPaused(bool paused) => _pauseNotice.Visible=paused;
 
     private static void SetValue(Label label, double value, int digits, string unit, ref double previous)
     {
