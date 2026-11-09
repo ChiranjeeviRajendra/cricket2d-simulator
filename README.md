@@ -4,7 +4,7 @@ A native Godot 4.7.2 .NET / C# cricket practice game. Configure a delivery, cont
 
 ## Play on this PC
 
-Double-click **`Play.cmd`**. It finds Godot .NET in your Downloads folder, builds the C# projects using the packages bundled with Godot, and launches the game. Godot 4.7.2 .NET and .NET SDK 10 are already installed; **no additional application is needed**.
+Double-click **`Play.cmd`**. It finds Godot .NET in your Downloads folder, builds the C# projects using the packages bundled with Godot, and launches the game in fullscreen without a window frame or title bar. **F11** toggles fullscreen/windowed mode. Godot 4.7.2 .NET and .NET SDK 10 are already installed; **no additional application is needed**.
 
 Alternatively, open `project.godot` in the Godot **.NET** editor, build, and press **F6/F5**. Run `Play.cmd` once before the first editor build to copy Godot's local dependency packages.
 
