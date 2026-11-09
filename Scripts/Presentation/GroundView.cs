@@ -128,13 +128,14 @@ public partial class GroundView : Node2D
     {
         // In true side projection the three stumps overlap. Small depth offsets make them legible.
         Vector2 root = W(new(x, 0));
+        float stumpHeight = (float)PitchDimensions.StumpHeight * PixelsPerMetre;
         for (int i = -1; i <= 1; i++)
         {
             Vector2 bottom = root + new Vector2(i * 3.5f, -i * 0.9f) * Zoom;
-            Vector2 top = bottom + new Vector2(hit ? (-13 - i * 6) * Zoom : 0, -(float)PitchDimensions.StumpHeight * PixelsPerMetre);
+            Vector2 top = bottom + new Vector2(hit ? (-13 - i * 6) * Zoom : 0, -stumpHeight);
             DrawLine(bottom, top, i == 0 ? new("e5cf9f") : new("b09b77"), Math.Max(.7f, 2.4f * Zoom), true);
         }
-        if (!hit) DrawLine(root + new Vector2(-5, -46) * Zoom, root + new Vector2(5, -46) * Zoom, new("f0dbb0"), Math.Max(.7f, 2 * Zoom), true);
+        if (!hit) DrawLine(root + new Vector2(-5 * Zoom, -stumpHeight), root + new Vector2(5 * Zoom, -stumpHeight), new("f0dbb0"), Math.Max(.7f, 2 * Zoom), true);
         else
         {
             DrawLine(root + new Vector2(-17, -14) * Zoom, root + new Vector2(-22, -19) * Zoom, BatWood, Math.Max(.7f, 2 * Zoom), true);
