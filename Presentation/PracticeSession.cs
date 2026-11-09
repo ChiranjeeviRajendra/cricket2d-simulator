@@ -22,9 +22,7 @@ public sealed class PracticeSession : IDisposable
     {
         _worker = new(physics);
         _seeds = new(seed ?? Random.Shared.Next());
-        int next = _seeds.Next();
-        Seed = next == Seed ? (next + 1) % int.MaxValue : next;
-        Prepare();
+        PrepareNextDelivery();
     }
 
     public bool Configure(PracticeBowlingSettings settings)
@@ -38,6 +36,19 @@ public sealed class PracticeSession : IDisposable
     public void OpenNextDelivery()
     {
         if (!_consumed) return;
+        PrepareNextDelivery();
+    }
+
+    /// <summary>Leaving practice discards overrides and invalidates any in-flight preview.</summary>
+    public void Reset()
+    {
+        Settings = new();
+        Guides = new(true, true);
+        PrepareNextDelivery();
+    }
+
+    private void PrepareNextDelivery()
+    {
         _consumed = false;
         int next = _seeds.Next();
         Seed = next == Seed ? (next + 1) % int.MaxValue : next;

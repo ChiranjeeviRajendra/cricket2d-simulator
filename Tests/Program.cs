@@ -44,6 +44,7 @@ var tests = new (string Name, Action Run)[]
     ("Seeded practice deliveries respect profiles, manual values and solver accuracy", PracticeChecks.Generation),
     ("Practice generation bounds retries, cancels and reports unreachable settings", PracticeChecks.Failures),
     ("Pending practice balls survive guide/menu changes and start the exact preview", PracticeChecks.Session),
+    ("Leaving practice restores defaults and cancels stale delivery preparation", PracticeChecks.Reset),
     ("Steady physics avoids per-tick heap allocation and bounds the trail", PerformanceChecks.SteadySimulationAllocations),
     ("Impact sounds classify bat contact, suppress chatter and rotate configured variants", AudioChecks.Selection),
     ("Audio configuration rejects invalid rules, volumes and sample paths", AudioChecks.Configuration),

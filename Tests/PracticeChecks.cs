@@ -140,6 +140,33 @@ internal static class PracticeChecks
         Check(!session.Poll() && !session.CanBowl, "Disposed session published work");
     }
 
+    public static void Reset()
+    {
+        using var session = new PracticeSession(new(), 8128);
+        var sim = new Simulation(new());
+        for (int i = 0; i < 6; i++)
+        {
+            session.OpenNextDelivery();
+            session.Configure(new() { RandomSpeed = false, RandomPitchLength = false, ManualSpeedKph = 140,
+                ManualLength = 18, ReleaseHeight = 1.8 });
+            session.Guides = new(false, false);
+            // Alternate resetting consumed balls and cancelling a preview that is still preparing.
+            if (i % 2 == 0) { Wait(session); Check(session.TryBegin(sim, out _), "Fixture did not bowl"); }
+            else session.Poll();
+            int previousSeed = session.Seed;
+            session.Reset();
+            Check(session.Settings == new PracticeBowlingSettings() && session.Guides == new PracticeGuides(true, true),
+                "Leaving practice retained settings or guides");
+            Check(session.IsPreparing && !session.CanBowl && session.PendingPlan == null && session.Error.Length == 0 &&
+                session.Seed != previousSeed, "Leaving practice retained a stale plan or error");
+            Wait(session);
+            Check(session.CanBowl && session.PendingPlan!.Settings.ReleaseHeight == 2.15 &&
+                SpeedUnits.ToKilometresPerHour(session.PendingPlan.Settings.Speed) is >= 80.1 and <= 110,
+                "A stale settings job replaced the default delivery");
+            Check(session.TryBegin(sim, out _), "Fresh practice remained consumed after reset");
+        }
+    }
+
     private static void Wait(PracticeSession session)
     {
         var watch = Stopwatch.StartNew();

@@ -28,6 +28,7 @@ public partial class GameController : Node2D
     private PracticeSession? _practice;
     private ImpactAudio? _audio;
     private bool _quitting;
+    private bool _nextDeliveryRequested;
 
     public override void _Ready()
     {
@@ -122,19 +123,33 @@ public partial class GameController : Node2D
         _hud = new GameHud();
         canvas.AddChild(_hud);
         _hud.DeliveryPanel.BeginRequested += Begin;
+        _hud.DeliveryPanel.CloseRequested += ClosePracticeSettings;
         _hud.DeliveryPanel.SettingsChanged += UpdatePreview;
         _hud.DeliveryPanel.GuidesChanged += guides => { _practice.Guides = guides; _ground.Guides = guides; };
+        _hud.PauseMenu.ResumeRequested += Resume;
+        _hud.PauseMenu.SettingsRequested += OpenPracticeSettings;
+        _hud.PauseMenu.MainMenuRequested += OpenMainMenu;
         SyncPendingDelivery();
+        RefreshPause();
     }
 
     private void OpenMainMenu()
     {
         _simulation.Batter.SuspendGesture();
+        _simulation.ReturnToSetup();
+        _simulation.Statistics.Reset();
+        _nextDeliveryRequested = _userPaused = false;
         _audio?.Stop();
-        _ground.InterpolationPaused = true;
+        _hud.DeliveryPanel.Hide();
+        _hud.PauseMenu.Hide();
+        _practice!.Reset();
+        _hud.DeliveryPanel.ResetSettings();
+        _ground.Guides = _practice.Guides;
+        SyncPendingDelivery();
         _ground.Hide();
         _hud.Hide();
         _menu.ShowMain();
+        RefreshPause();
     }
 
     public override void _PhysicsProcess(double delta)
@@ -158,6 +173,12 @@ public partial class GameController : Node2D
     public override void _Process(double delta)
     {
         if (_practice != null && _practice.Poll()) SyncPendingDelivery();
+        if (_nextDeliveryRequested && !_paused && !_menu.Visible && !_hud.DeliveryPanel.Visible && !_practice!.IsPreparing)
+        {
+            _nextDeliveryRequested = false;
+            if (_practice.CanBowl) Begin();
+            else OpenSetup(); // Keep invalid settings and their error accessible for correction.
+        }
         if (_simulation != null && _hud.IsVisibleInTree()) _hud.Refresh(_simulation);
     }
 
@@ -175,9 +196,8 @@ public partial class GameController : Node2D
     {
         _paused=_focusPaused || _userPaused;
         if(_paused && _simulation != null) _simulation.Batter.SuspendGesture();
-        if(_ground != null) _ground.InterpolationPaused=_paused || _menu.Visible;
+        if(_ground != null) _ground.InterpolationPaused=_paused || _menu.Visible || _hud.DeliveryPanel.Visible;
         _audio?.SetPaused(_paused);
-        _hud?.SetPaused(_userPaused);
     }
 
     public override void _Input(InputEvent evt)
@@ -196,11 +216,17 @@ public partial class GameController : Node2D
             return;
         }
         if (_hud == null) return;
-        if (BattingControls.IsPause(evt) && (!_hud.DeliveryPanel.Visible || evt is InputEventJoypadButton))
+        if (BattingControls.IsPause(evt) &&
+            ((!_hud.DeliveryPanel.Visible && !_hud.PauseMenu.Visible) || evt is InputEventJoypadButton))
         {
-            _userPaused=!_userPaused;
-            RefreshPause();
+            if (_userPaused) Resume();
+            else OpenPauseMenu();
             GetViewport().SetInputAsHandled();
+            return;
+        }
+        if (_hud.PauseMenu.Visible)
+        {
+            if (_hud.PauseMenu.HandleInput(evt)) GetViewport().SetInputAsHandled();
             return;
         }
         bool back = evt is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.B } ||
@@ -209,10 +235,21 @@ public partial class GameController : Node2D
         {
             if (back)
             {
-                if (!_hud.DeliveryPanel.CloseBowlerList()) OpenMainMenu();
+                if (!_hud.DeliveryPanel.CloseBowlerList())
+                {
+                    if (_hud.DeliveryPanel.EditingPausedDelivery) ClosePracticeSettings();
+                    else OpenMainMenu();
+                }
                 GetViewport().SetInputAsHandled();
             }
             else if (_hud.DeliveryPanel.HandleInput(evt)) GetViewport().SetInputAsHandled();
+            return;
+        }
+        if (_paused) return;
+        if (BattingControls.IsNextDelivery(evt))
+        {
+            RequestNextDelivery();
+            GetViewport().SetInputAsHandled();
             return;
         }
         bool setup=evt is InputEventJoypadButton { Pressed:true,ButtonIndex:JoyButton.Back } ||
@@ -220,7 +257,7 @@ public partial class GameController : Node2D
         bool menu=evt is InputEventKey { Pressed:true,Echo:false,Keycode:Key.Escape };
         if (menu || setup)
         {
-            if (menu) OpenMainMenu();
+            if (menu) OpenPauseMenu();
             else OpenSetup();
             GetViewport().SetInputAsHandled();
             return;
@@ -234,19 +271,68 @@ public partial class GameController : Node2D
         if (!_practice!.TryBegin(_simulation, out string error))
         { _hud.DeliveryPanel.SetPreparation(_practice.IsPreparing, false, error); return; }
         _userPaused=false;
-        RefreshPause();
+        _nextDeliveryRequested = false;
         _audio?.ResetDelivery();
         _hud.DeliveryPanel.Hide();
+        _hud.PauseMenu.Hide();
+        RefreshPause();
+    }
+
+    private void RequestNextDelivery()
+    {
+        if (_nextDeliveryRequested || _simulation.Phase == DeliveryPhase.Windup) return;
+        _simulation.Batter.SuspendGesture();
+        _simulation.ReturnToSetup();
+        _audio?.Stop();
+        _practice!.OpenNextDelivery();
+        SyncPendingDelivery();
+        if (_practice.CanBowl) Begin();
+        else _nextDeliveryRequested = true;
+    }
+
+    private void OpenPauseMenu()
+    {
+        _nextDeliveryRequested = false;
+        _userPaused = true;
+        _hud.DeliveryPanel.CloseBowlerList();
+        _hud.DeliveryPanel.Hide();
+        _hud.PauseMenu.Open();
+        RefreshPause();
+    }
+
+    private void Resume()
+    {
+        _hud.DeliveryPanel.CloseBowlerList();
+        _hud.DeliveryPanel.Hide();
+        _hud.PauseMenu.Hide();
+        _userPaused = false;
+        RefreshPause();
+    }
+
+    private void OpenPracticeSettings()
+    {
+        _hud.PauseMenu.Hide();
+        _hud.DeliveryPanel.Open(editingPausedDelivery: true);
+        RefreshPause();
+    }
+
+    private void ClosePracticeSettings()
+    {
+        _hud.DeliveryPanel.CloseBowlerList();
+        _hud.DeliveryPanel.Hide();
+        _hud.PauseMenu.Open(focusSettings: true);
     }
 
     private void OpenSetup()
     {
+        _nextDeliveryRequested = false;
         _simulation.Batter.SuspendGesture();
         _audio?.Stop();
         _simulation.ReturnToSetup();
         _practice!.OpenNextDelivery();
         SyncPendingDelivery();
         _hud.DeliveryPanel.Open();
+        RefreshPause();
     }
 
     private void UpdatePreview(PracticeBowlingSettings request)
