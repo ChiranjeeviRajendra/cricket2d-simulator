@@ -13,7 +13,7 @@ Clock positions describe the **top-hand arm direction from its shoulder**, viewe
 | B | Hold B / L | 1:30 | Face rotates forward; blade finishes pointing at 4 o'clock |
 | Y | Hold Y / I | 12 | Same as A through 2; then the blade turns from 2 toward 3 as the arms continue to 12, ending horizontal with its face toward the sky |
 
-R2/L2 transfer weight forward/back progressively (E/Q on keyboard). Menu/Start pauses; View/Select opens delivery settings. Space pauses outside setup controls, Enter opens settings and Escape opens the main menu. A/B retain confirm/back roles inside menus.
+R2/L2 transfer weight forward/back progressively (E/Q on keyboard). D-pad Up bowls the first or next ball. Menu/Start opens the pause menu with Resume, Settings and Main Menu; Settings edits practice options while the current ball stays frozen. View/Select still opens explicit delivery setup. Space or Escape opens pause during play, Enter opens setup, and keyboard Up requests the next ball. A/B retain confirm/back roles inside menus. Only the D-pad navigates controller UI; sticks control gameplay. Leaving practice through Main Menu or exiting the game discards practice overrides.
 
 **To swing:** move the left stick outward near 8:30, then rotate **8:30 → 6 → 3 → 12**. Mode buttons work before, during and after the swing, including while holding the stick still or recovering. The currently held button applies on the next physics tick without re-arming; releasing all modifiers returns to A. Switching away from X/B restores the current stick angle beyond their stops. Simultaneous modifiers use priority X, B, Y, A. No button is exactly A; there is no fifth “natural” mode. Right-stick batting remains disabled.
 

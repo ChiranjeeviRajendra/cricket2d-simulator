@@ -12,8 +12,6 @@ public partial class MainMenu : Control
     private Label _heading = null!;
     private Button _practice = null!, _exit = null!, _batting = null!, _back = null!;
     private Button _match = null!, _settings = null!, _bowling = null!;
-    private int _stickDirection;
-    private double _stickRepeat;
     internal bool UnavailableChoicesDisabled => _match.Disabled && _settings.Disabled && _bowling.Disabled;
 
     public override void _Ready()
@@ -49,7 +47,7 @@ public partial class MainMenu : Control
         _batting = Choice(_practiceChoices, "Batting", () => BattingRequested?.Invoke());
         _bowling = Choice(_practiceChoices, "Bowling", null);
         _back = Choice(_practiceChoices, "Back", ShowMain);
-        var hint = VisualTheme.Label("Stick / D-pad / arrows to move   ·   Enter / A to select", 14, VisualTheme.MutedOnDark);
+        var hint = VisualTheme.Label("D-pad / arrows to move   ·   Enter / A to select", 14, VisualTheme.MutedOnDark);
         hint.HorizontalAlignment = HorizontalAlignment.Center;
         stack.AddChild(hint);
         Resized += QueueRedraw;
@@ -68,7 +66,6 @@ public partial class MainMenu : Control
 
     public void ShowMain()
     {
-        _stickDirection = 0;
         Show();
         ShowingPractice = false;
         _heading.Text = "Main Menu";
@@ -79,7 +76,6 @@ public partial class MainMenu : Control
 
     public void ShowPractice()
     {
-        _stickDirection = 0;
         ShowingPractice = true;
         _heading.Text = "Practice";
         _mainChoices.Hide();
@@ -89,18 +85,7 @@ public partial class MainMenu : Control
 
     public bool HandleInput(InputEvent evt)
     {
-        if (evt is InputEventJoypadMotion { Axis: JoyAxis.LeftY } axis)
-        {
-            int next = Math.Abs(axis.AxisValue) >= .55 ? Math.Sign(axis.AxisValue) : 0;
-            if (Math.Abs(axis.AxisValue) < .25) _stickDirection = 0;
-            else if (next != 0 && next != _stickDirection)
-            {
-                _stickDirection = next;
-                _stickRepeat = .4;
-                MoveSelection(next);
-            }
-            return true;
-        }
+        if (evt is InputEventJoypadMotion) return true;
         int direction = 0;
         bool accept = false, back = false;
         if (evt is InputEventJoypadButton { Pressed: true } joy)
@@ -129,14 +114,6 @@ public partial class MainMenu : Control
             return true;
         }
         return false;
-    }
-
-    public override void _Process(double delta)
-    {
-        if (!Visible || !GetWindow().HasFocus()) { _stickDirection = 0; return; }
-        if (_stickDirection == 0) return;
-        _stickRepeat -= delta;
-        if (_stickRepeat <= 0) { MoveSelection(_stickDirection); _stickRepeat = .14; }
     }
 
     private void MoveSelection(int direction)

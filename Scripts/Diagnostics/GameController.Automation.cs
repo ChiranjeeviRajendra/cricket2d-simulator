@@ -25,13 +25,7 @@ public partial class GameController
         valid &= _menu.ShowingPractice && _simulation == null;
         SmokeButton(JoyButton.B);
         valid &= !_menu.ShowingPractice;
-        foreach (float value in new[] { 1f, 0f })
-        {
-            Godot.Input.ParseInputEvent(new InputEventJoypadMotion { Device = 0, Axis = JoyAxis.LeftY, AxisValue = value });
-            Godot.Input.FlushBufferedEvents();
-        }
-        valid &= GetViewport().GuiGetFocusOwner()?.Name == "Exit";
-        SmokeButton(JoyButton.DpadUp);
+        valid &= SticksLeaveFocusUnchanged() && GetViewport().GuiGetFocusOwner()?.Name == "Practice";
         var focused = (Button)GetViewport().GuiGetFocusOwner();
         valid &= focused.GetThemeColor("font_color") == VisualTheme.OnDark &&
             ((StyleBoxFlat)focused.GetThemeStylebox("normal")).BgColor == VisualTheme.Ink;
@@ -52,14 +46,15 @@ public partial class GameController
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         valid &= _hud.DeliveryPanel.Visible && await CheckDeliverySliders();
-        var pending = _practice!.PendingPlan;
-        int seed = _practice.Seed;
+        var previousSettings = _practice!.Settings;
         SmokeKey(Key.Escape);
-        valid &= _menu.Visible;
+        valid &= _menu.Visible && _practice.Settings == new PracticeBowlingSettings() &&
+            _hud.DeliveryPanel.Settings == _practice.Settings && _practice.Settings != previousSettings;
         SmokeButton(JoyButton.A);
         SmokeButton(JoyButton.A);
-        valid &= _hud.DeliveryPanel.Visible && !_menu.Visible && _practice.Seed == seed && ReferenceEquals(pending, _practice.PendingPlan);
-        _hud.DeliveryPanel.Hide(); // Leave the existing delivery lifecycle smoke at its initial idle state.
+        valid &= !_hud.DeliveryPanel.Visible && !_menu.Visible && !_paused && !_hud.PauseMenu.Visible;
+        valid &= await CheckDeliveryRequestCancellation();
+        _hud.DeliveryPanel.SetSettings(new PracticeBowlingSettings().WithManualSpeed(115.2) with { RandomPitchLength = false, RandomSpeed = false });
         GD.Print(valid ? "SMOKE PASS: main menu, disabled modes, mouse/keyboard/controller navigation, Back, Exit and Practice > Batting." :
             "SMOKE FAIL: main menu navigation.");
         _smokeMenuComplete = true;
@@ -83,7 +78,7 @@ public partial class GameController
 
     private void SmokeTick()
     {
-        if (_smokeTicks is 2 or 904 && !_hud.DeliveryPanel.CanBowl)
+        if ((_smokeTicks == 2 && !_hud.DeliveryPanel.CanBowl) || (_smokeTicks == 904 && _nextDeliveryRequested))
         {
             if (++_smokePreparationWaitTicks > 1200) { GD.Print("SMOKE FAIL: preparation timed out."); GetTree().Quit(1); }
             return;
@@ -110,7 +105,8 @@ public partial class GameController
                 _simulation.PhaseTime > 5 && !_hud.DeliveryPanel.Visible;
             double time = _simulation.PhaseTime;
             SmokeButton(JoyButton.Start);
-            _smokeLifecycleValid &= _userPaused && _paused && !_hud.DeliveryPanel.Visible;
+            _smokeLifecycleValid &= _userPaused && _paused && !_hud.DeliveryPanel.Visible && _hud.PauseMenu.Visible &&
+                GetViewport().GuiGetFocusOwner()?.Name == "Resume" && SticksLeaveFocusUnchanged();
             _smokeTest = false; // Exercise the normal focus/power policy, then restore automation.
             SetFocusPaused(true);
             _PhysicsProcess(SimulationSettings.Tick);
@@ -118,35 +114,44 @@ public partial class GameController
             SetFocusPaused(false);
             _PhysicsProcess(SimulationSettings.Tick);
             _smokeLifecycleValid &= Engine.MaxFps == 0 && _ground.InterpolationPaused && _simulation.PhaseTime == time;
-            SmokeButton(JoyButton.Start);
+            // Up navigates the pause menu; it must not replace the current delivery.
+            var plan = _simulation.Plan;
+            var ball = _simulation.Ball;
+            double peakSpeed = _simulation.Statistics.MaxSpeed;
+            SmokeButton(JoyButton.DpadUp);
+            _smokeLifecycleValid &= GetViewport().GuiGetFocusOwner()?.Name == "MainMenu" && ReferenceEquals(plan, _simulation.Plan);
+            SmokeButton(JoyButton.DpadUp); SmokeButton(JoyButton.A);
+            _smokeLifecycleValid &= _hud.DeliveryPanel.Visible && _hud.DeliveryPanel.EditingPausedDelivery && !_hud.PauseMenu.Visible;
+            _hud.DeliveryPanel.SetSettings(_practice!.Settings.WithManualSpeed(115.3));
+            var pitchGuide = (CheckBox)_hud.DeliveryPanel.FindChild("ShowPitchPosition", true, false);
+            pitchGuide.ButtonPressed = false;
+            _PhysicsProcess(SimulationSettings.Tick);
+            _smokeLifecycleValid &= _paused && _simulation.Ball == ball && _simulation.PhaseTime == time &&
+                _simulation.Statistics.MaxSpeed == peakSpeed && ReferenceEquals(plan, _simulation.Plan) &&
+                SticksLeaveFocusUnchanged() && !_ground.Guides.ShowPitchPosition;
+            SmokeButton(JoyButton.A); // Back at the top of paused settings.
+            _smokeLifecycleValid &= !_hud.DeliveryPanel.Visible && _hud.PauseMenu.Visible && _paused &&
+                GetViewport().GuiGetFocusOwner()?.Name == "Settings";
+            SmokeButton(JoyButton.DpadUp); SmokeButton(JoyButton.A); // Resume.
             _smokeLifecycleValid &= !_paused && !_userPaused && !_ground.InterpolationPaused;
             SmokeButton(JoyButton.A); SmokeButton(JoyButton.B); SmokeButton(JoyButton.X); SmokeButton(JoyButton.Y);
             _smokeLifecycleValid &= !_menu.Visible && !_hud.DeliveryPanel.Visible && _simulation.PhaseTime == time;
             _smokeTest = true;
+            SmokeButton(JoyButton.Start); SmokeButton(JoyButton.Start);
+            _smokeLifecycleValid &= !_paused && !_hud.PauseMenu.Visible;
             SmokeKey(Key.Escape);
-            _PhysicsProcess(SimulationSettings.Tick);
-            _smokeLifecycleValid &= _menu.Visible && _simulation.PhaseTime == time;
-            SmokeButton(JoyButton.A);
-            SmokeButton(JoyButton.A);
-            _smokeLifecycleValid &= !_menu.Visible && _simulation.PhaseTime == time && !_hud.DeliveryPanel.Visible;
-            GD.Print($"SMOKE waiting for setup: phase={_simulation.Phase}, time={_simulation.PhaseTime:0.00} s, modal={_hud.DeliveryPanel.Visible}");
+            _smokeLifecycleValid &= _paused && _hud.PauseMenu.Visible;
+            SmokeButton(JoyButton.B);
+            _smokeLifecycleValid &= !_paused && !_hud.PauseMenu.Visible;
         }
         if (_smokeTicks == 901)
         {
             double peakSpeed = _simulation.Statistics.MaxSpeed;
-            SmokeKey(Key.Enter);
-            _smokeLifecycleValid &= _hud.DeliveryPanel.Visible && _simulation.Phase == DeliveryPhase.Setup &&
+            SmokeButton(JoyButton.DpadUp);
+            int seed = _practice!.Seed;
+            SmokeButton(JoyButton.DpadUp); // Do not queue or reroll a second request while preparing/winding up.
+            _smokeLifecycleValid &= !_hud.DeliveryPanel.Visible && _practice.Seed == seed &&
                 _simulation.Statistics.MaxSpeed == peakSpeed;
-        }
-        if (_smokeTicks == 903)
-        {
-            ((HSlider)_hud.DeliveryPanel.FindChild("ReleaseSpeedSlider", true, false)).GrabFocus();
-            SmokeButton(JoyButton.DpadRight);
-        }
-        if (_smokeTicks == 905)
-        {
-            ((Button)_hud.DeliveryPanel.FindChild("Bowl", true, false)).GrabFocus();
-            SmokeKey(Key.Enter);
         }
         if (_smokeTicks == 907)
         {
@@ -156,7 +161,14 @@ public partial class GameController
                 Math.Abs(_simulation.Plan!.Settings.Speed - SpeedUnits.ToMetresPerSecond(115.3)) < 1e-9 &&
                 _simulation.Statistics.MaxSpeed == 0 && _simulation.Statistics.MaxHeight == 0;
             GD.Print($"SMOKE next delivery: phase={_simulation.Phase}, release={SpeedUnits.ToKilometresPerHour(_simulation.Plan!.Settings.Speed):0.0} km/h, modal={_hud.DeliveryPanel.Visible}");
-            GD.Print(valid ? "SMOKE PASS: View/Enter settings, face buttons reserved for shots, Start pause survives focus changes, Escape menu, km/h and second delivery." : "SMOKE FAIL: delivery lifecycle or controller menu.");
+            // Leave through the pause menu with changed settings/guides, then start fresh.
+            SmokeButton(JoyButton.Start); SmokeButton(JoyButton.DpadUp); SmokeButton(JoyButton.A);
+            valid &= _menu.Visible && !_paused && !_nextDeliveryRequested && _practice!.Settings == new PracticeBowlingSettings() &&
+                _hud.DeliveryPanel.Settings == _practice.Settings && _ground.Guides == new PracticeGuides(true, true) &&
+                _hud.DeliveryPanel.Guides == _ground.Guides;
+            SmokeButton(JoyButton.A); SmokeButton(JoyButton.A);
+            valid &= !_menu.Visible && _simulation.Phase == DeliveryPhase.Setup && !_hud.PauseMenu.Visible && !_hud.DeliveryPanel.Visible;
+            GD.Print(valid ? "SMOKE PASS: D-pad next ball, pause/resume/settings/main menu, frozen ball, session defaults and D-pad-only UI." : "SMOKE FAIL: delivery lifecycle or controller menu.");
             GD.Print($"Controller devices detected: {Godot.Input.GetConnectedJoypads().Count}");
             GetTree().Quit(valid ? 0 : 1);
         }
@@ -355,6 +367,13 @@ public partial class GameController
         for (int i = 0; i < 260; i++) _simulation.Tick(default);
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         SaveCapture("res://artifacts/ground.png");
+        OpenPauseMenu();
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/pause-menu.png");
+        OpenPracticeSettings();
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/pause-settings.png");
+        Resume();
         foreach (var (name, position) in new (string, Vec2)[]
         {
             ("camera-left", new(FieldLayout.BatterReferenceX + 80, 4)),

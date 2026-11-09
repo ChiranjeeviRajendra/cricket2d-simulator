@@ -20,9 +20,11 @@ Focused rendering has **no engine FPS cap**, with VSync enabled. Focus loss paus
 
 ## Delivery setup
 
-The game opens on the **Main Menu** with **Play Match** (disabled), **Practice**, **Settings** (disabled) and **Exit**. Select **Practice → Batting** to enter the existing batting gameplay; **Bowling** is disabled. Menus support mouse clicks, the left stick, arrow keys/D-pad, Enter/A to select, and Escape/B to go back from Practice. Selected items use a charcoal fill and soft ivory text; the remaining UI uses soft ivory panels and warm grey text.
+The game opens on the **Main Menu** with **Play Match** (disabled), **Practice**, **Settings** (disabled) and **Exit**. Select **Practice → Batting** to enter batting gameplay; **Bowling** is disabled. Menus support mouse clicks, arrow keys/D-pad, Enter/A to select, and Escape/B to go back from Practice. Neither stick navigates UI, changes sliders, or moves the bowler dropdown selection. Selected items use a charcoal fill and soft ivory text; the remaining UI uses soft ivory panels and warm grey text.
 
-Batting starts on the idle field. Press **View / Select / Enter** to open **Batting Practice Settings**. **Bowl** sits at the top and is focused by default, remaining disabled until preparation finishes. Inside the popup, A/Enter activates the focused selector, checkbox or Bowl button. Only Bowl starts a delivery. Inside setup, **B / Escape** closes the bowler list or returns to the main menu. During play, **Menu / Start** pauses and **Escape** opens the main menu; A/B are reserved for shots. Selecting Practice → Batting again resumes the same session and pending delivery.
+Batting starts on the idle field. Press **D-pad Up / keyboard Up** to bowl the first or next ball with the current settings. After release, play continues until you request the next ball; there is no automatic repeat. One press prepares and starts one delivery, and extra presses during preparation or windup are ignored. **View / Select / Enter** also opens the existing delivery setup, where **Bowl** is focused and enabled once preparation finishes. A/Enter activates the focused control; **B / Escape** closes the bowler list or leaves setup for the main menu.
+
+**Menu / Start**, **Escape**, or **Space** during play opens the pause menu with **Resume**, **Settings**, and **Main Menu**. Settings opens **Batting Practice Settings** while keeping the current ball and measurements frozen. Its **Back** button or B/Escape returns to the pause menu; Resume, Start, or B from the pause menu continues the same ball. Bowling changes apply to the next delivery. Main Menu ends practice and resets all practice settings and guide checkboxes to their defaults. Exiting the application also discards them; nothing is saved to disk. A/B remain shot controls during play.
 
 Choose a bowler at the top of the popup. **Medium** is selected initially, with both random options enabled:
 
@@ -42,9 +44,9 @@ Choose a bowler at the top of the popup. **Medium** is selected initially, with 
 | Pitching length | First ground contact, measured **from the bowler-end wicket** toward the striker | 8–25 m |
 | Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.16 m (153–216 cm) |
 
-Settings retain their unnumbered boxes and live value badges. The pitch diagram uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Use mouse drag, arrows, D-pad or the left stick. Up/down and Tab/Shift+Tab navigate visible controls; hidden sliders are skipped. The body scrolls when expanded, while Bowl and delivery status stay visible.
+Settings retain their unnumbered boxes and live value badges. The pitch diagram uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Use mouse drag, arrows or D-pad. Up/down and Tab/Shift+Tab navigate visible controls; hidden sliders are skipped. The body scrolls when expanded, while the primary button and delivery status stay visible.
 
-Activate **Bowl** when preparation is complete. The automated bowler winds up for 1.25 s, then releases the ball. You can move the bat during the windup. There is **no timed reset**: the ball continues until you press **A / Enter** for the next delivery settings. Each new ball gets a new random seed; reopening an unbowled setup or returning from the main menu keeps the pending ball. Opening settings retains the previous delivery's maxima; bowling clears them. Leaving the window pauses the simulation. Practice choices last for the current game session and are not written to disk.
+The automated bowler winds up for 1.25 s, then releases the ball. You can move the bat during the windup. Each new ball gets a new random seed; reopening an unbowled setup keeps the pending ball. Returning to the main menu discards it and restores defaults. Opening settings retains the previous delivery's maxima; bowling clears them. Leaving the window pauses the simulation. Practice choices last until leaving practice and are not written to disk.
 
 **Show pitch position** and **Show predicted bowling trajectory** default on and are independent. Turning off the position guide hides the marker throughout the delivery. The predicted path appears only before release. Neither checkbox rerolls the ball. The actual live ball trail has its own **T** shortcut and is enabled initially; T does not change either prediction guide. Random settings display ranges rather than the sampled values.
 
@@ -76,12 +78,13 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 | B: arms stop at 1:30; blade points at 4 | Hold B at any point | L |
 | Y: follows A to 2, then blade turns toward 3 as arms reach 12 | Hold Y at any point | I |
 | Front / back weight | R2 / L2, progressive | E / Q |
-| Pause / resume | Menu / Start | Space outside setup controls |
+| Pause menu / resume | Menu / Start | Escape or Space during play |
+| Bowl first / next ball | D-pad Up during play | Up |
 | Open / return to delivery settings | View / Select | Enter |
 | Navigate setup | D-pad | Arrows, Tab or mouse |
 | Activate setup control (Bowl starts delivery) | A | Enter / Space |
 | Back within setup/menu | B | Escape |
-| Main menu during play | View, then B | Escape |
+| Main menu during play | Start → Main Menu | Escape → Main Menu |
 | Toggle ball trail / full screen | — | T / F11 |
 
 Start the stick beyond 60% radius near 8:30, then rotate through 6 and 3. A direct push, centre crossing or small movement cannot start a swing. After the initial 6° gate, the arm clock matches the stick on the current physics tick with no animation easing or speed limiter. Holding stops immediately; reversing reverses the stroke. Centre the stick to recover toward 8:30. A fresh deliberate rotation can interrupt that recovery immediately; an off-angle push no longer blocks later entry into the start area. Consecutive full rotations also start consecutive strokes without requiring a centre release. Change the held mode button before, during or after the swing; it applies at the current stick position without re-arming. Releasing modifiers returns to A. Free swings also work before bowling, while the delivery panel is closed. No button is A.

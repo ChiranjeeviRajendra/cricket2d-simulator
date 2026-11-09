@@ -8,12 +8,14 @@ namespace Cricket2D;
 public partial class DeliveryPanel : Control
 {
     public event Action? BeginRequested;
+    public event Action? CloseRequested;
     public event Action<PracticeBowlingSettings>? SettingsChanged;
     public event Action<PracticeGuides>? GuidesChanged;
     public PracticeBowlingSettings Settings { get; private set; } = new();
     public DeliverySettings Values => Settings.ManualDelivery;
     public PracticeGuides Guides => new(_pitchGuide.ButtonPressed, _trajectoryGuide.ButtonPressed);
-    public bool CanBowl => !_bowl.Disabled;
+    public bool CanBowl { get; private set; }
+    public bool EditingPausedDelivery { get; private set; }
     private OptionButton _bowler = null!;
     private CheckBox _randomLength = null!, _randomSpeed = null!, _pitchGuide = null!, _trajectoryGuide = null!;
     private PitchLengthSlider _length = null!;
@@ -29,8 +31,6 @@ public partial class DeliveryPanel : Control
     private readonly StyleBoxFlat _rowNormal = VisualTheme.Box(Colors.Transparent, VisualTheme.Border, 6, 12);
     private readonly StyleBoxFlat _rowSelected = VisualTheme.Box(Colors.Transparent, VisualTheme.Ink, 6, 12);
     private bool _changing;
-    private int _stickX, _stickY;
-    private double _repeatX, _repeatY;
 
     public override void _Ready()
     {
@@ -44,7 +44,7 @@ public partial class DeliveryPanel : Control
         stack.AddChild(VisualTheme.Label("Batting Practice Settings", 30)); stack.AddChild(new HSeparator());
         _bowl = new() { Name = "Bowl", Text = "Bowl", Disabled = true, CustomMinimumSize = new(0, 44) };
         stack.AddChild(_bowl); Register(_bowl, null); VisualTheme.NavigationButton(_bowl);
-        _bowl.Pressed += () => { if (CanBowl) BeginRequested?.Invoke(); };
+        _bowl.Pressed += ActivatePrimary;
         _scroll = new() { Name = "SettingsScroll", SizeFlagsVertical = SizeFlags.ExpandFill,
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, FollowFocus = true };
         stack.AddChild(_scroll);
@@ -62,6 +62,7 @@ public partial class DeliveryPanel : Control
         // controller activation/back in that window rather than the game viewport.
         popup.WindowInput += evt =>
         {
+            if (evt is InputEventJoypadMotion) { popup.SetInputAsHandled(); return; }
             if (!popup.Visible || evt is not InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.A or JoyButton.B }) return;
             if (evt is InputEventJoypadButton { ButtonIndex: JoyButton.A } && popup.GetFocusedItem() >= 0)
                 SetSettings(Settings.WithBowler((BowlerType)popup.GetFocusedItem()));
@@ -134,14 +135,34 @@ public partial class DeliveryPanel : Control
     {
         _status.Text = preparing ? "Preparing delivery…" : error;
         _status.AddThemeColorOverride("font_color", error.Length == 0 ? VisualTheme.Muted : VisualTheme.Coral);
-        bool wasReady = CanBowl; _bowl.Disabled = !ready;
+        bool wasReady = CanBowl; CanBowl = ready; _bowl.Disabled = !EditingPausedDelivery && !ready;
         if (wasReady != ready) RebuildFocus();
     }
 
-    public void Open()
+    public void Open(bool editingPausedDelivery = false)
     {
-        Show(); _stickX = _stickY = 0; RebuildFocus(); _bowl.GrabFocus();
+        EditingPausedDelivery = editingPausedDelivery;
+        _bowl.Text = editingPausedDelivery ? "Back" : "Bowl";
+        _bowl.Disabled = !editingPausedDelivery && !CanBowl;
+        Show(); RebuildFocus(); _bowl.GrabFocus();
         _scroll.ScrollVertical = 0; PositionCard();
+    }
+
+    public void ResetSettings()
+    {
+        CloseBowlerList();
+        Settings = new();
+        _pitchGuide.SetPressedNoSignal(true);
+        _trajectoryGuide.SetPressedNoSignal(true);
+        EditingPausedDelivery = false;
+        _bowl.Text = "Bowl";
+        RefreshControls();
+    }
+
+    private void ActivatePrimary()
+    {
+        if (EditingPausedDelivery) CloseRequested?.Invoke();
+        else if (CanBowl) BeginRequested?.Invoke();
     }
 
     public bool CloseBowlerList()
@@ -152,20 +173,8 @@ public partial class DeliveryPanel : Control
 
     public bool HandleInput(InputEvent evt)
     {
+        if (evt is InputEventJoypadMotion) return true;
         if (_bowler.GetPopup().Visible) return false;
-        if (evt is InputEventJoypadMotion axis && axis.Axis is JoyAxis.LeftX or JoyAxis.LeftY)
-        {
-            ref int direction = ref (axis.Axis == JoyAxis.LeftX ? ref _stickX : ref _stickY);
-            ref double repeat = ref (axis.Axis == JoyAxis.LeftX ? ref _repeatX : ref _repeatY);
-            int next = Math.Abs(axis.AxisValue) >= .55 ? Math.Sign(axis.AxisValue) : 0;
-            if (Math.Abs(axis.AxisValue) < .25) direction = 0;
-            else if (next != 0 && direction != next)
-            {
-                direction = next; repeat = .4;
-                if (axis.Axis == JoyAxis.LeftX) Adjust(next); else MoveFocus(next);
-            }
-            return true;
-        }
         int vertical = 0, horizontal = 0; bool accept = false;
         if (evt is InputEventJoypadButton { Pressed: true } joy)
         {
@@ -186,17 +195,10 @@ public partial class DeliveryPanel : Control
             var focus = GetViewport().GuiGetFocusOwner();
             if (focus == _bowler) { _bowler.ShowPopup(); _bowler.GetPopup().SetFocusedItem(_bowler.Selected); }
             else if (focus is CheckBox check) check.ButtonPressed = !check.ButtonPressed;
-            else if (focus == _bowl && CanBowl) BeginRequested?.Invoke();
+            else if (focus == _bowl) ActivatePrimary();
         }
         else return false;
         return true;
-    }
-
-    public override void _Process(double delta)
-    {
-        if (!IsVisibleInTree() || !GetWindow().HasFocus() || _bowler.GetPopup().Visible) { _stickX = _stickY = 0; return; }
-        if (_stickY != 0 && (_repeatY -= delta) <= 0) { _repeatY = .14; MoveFocus(_stickY); }
-        if (_stickX != 0 && (_repeatX -= delta) <= 0) { _repeatX = .14; Adjust(_stickX); }
     }
 
     private void Adjust(int direction)

@@ -31,6 +31,7 @@ public partial class GameController
             !length.IsVisibleInTree() && !speed.IsVisibleInTree() && height.IsVisibleInTree() && bowl.HasFocus();
         valid &= await WaitForDelivery();
         valid &= bowl.HasFocus() && bowl.GetGlobalRect().End.Y <= scroll.GlobalPosition.Y;
+        valid &= SticksLeaveFocusUnchanged();
         SmokeButton(JoyButton.DpadDown); valid &= bowler.HasFocus();
         SmokeKey(Key.Up); valid &= bowl.HasFocus();
         var pending = _practice!.PendingPlan;
@@ -76,8 +77,11 @@ public partial class GameController
             Godot.Input.FlushBufferedEvents();
         }
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-        if (bowler.GetPopup().GetFocusedItem() != (int)BowlerType.Fast)
-        { GD.PushError("Left stick did not move exactly one bowler dropdown item."); return false; }
+        if (bowler.GetPopup().GetFocusedItem() != (int)BowlerType.Medium)
+        { GD.PushError("Left stick moved the bowler dropdown item."); return false; }
+        foreach (var axis in new[] { JoyAxis.LeftX, JoyAxis.RightX, JoyAxis.RightY })
+            SmokeAxis(axis);
+        valid &= bowler.GetPopup().GetFocusedItem() == (int)BowlerType.Medium;
         SmokeButton(JoyButton.B);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         if (bowler.GetPopup().Visible || _menu.Visible || !panel.Visible)
@@ -87,6 +91,9 @@ public partial class GameController
         randomSpeed.GrabFocus(); SmokeKey(Key.Space);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         valid &= length.IsVisibleInTree() && speed.IsVisibleInTree() && !panel.Settings.RandomPitchLength && !panel.Settings.RandomSpeed;
+        speed.GrabFocus();
+        double originalSpeed = speed.Value;
+        valid &= SticksLeaveFocusUnchanged() && speed.Value == originalSpeed;
         DeliverySettings? lastChange = null;
         void Changed(PracticeBowlingSettings values) => lastChange = values.ManualDelivery;
         panel.SettingsChanged += Changed;
@@ -180,5 +187,57 @@ public partial class GameController
             GetViewport().PushInput(new InputEventMouseButton { Position = end, GlobalPosition = end,
                 ButtonIndex = MouseButton.Left, Pressed = false }, true);
         }
+    }
+
+    private static void SmokeAxis(JoyAxis axis)
+    {
+        foreach (float value in new[] { -1f, 1f, 0f })
+        {
+            Godot.Input.ParseInputEvent(new InputEventJoypadMotion { Device = 0, Axis = axis, AxisValue = value });
+            Godot.Input.FlushBufferedEvents();
+        }
+    }
+
+    private async Task<bool> CheckDeliveryRequestCancellation()
+    {
+        _hud.DeliveryPanel.SetSettings(new PracticeBowlingSettings().WithManualSpeed(18) with
+            { RandomPitchLength = false, RandomSpeed = false, ManualLength = 25 });
+        SmokeButton(JoyButton.DpadUp);
+        int seed = _practice!.Seed;
+        SmokeButton(JoyButton.DpadUp);
+        bool valid = _nextDeliveryRequested && _practice.Seed == seed;
+        SmokeButton(JoyButton.Start);
+        await WaitForDelivery();
+        valid &= !_nextDeliveryRequested && _paused && _simulation.Phase == DeliveryPhase.Setup && _hud.PauseMenu.Visible;
+        SmokeButton(JoyButton.Start);
+        SmokeButton(JoyButton.DpadUp);
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
+        valid &= !_nextDeliveryRequested && _hud.DeliveryPanel.Visible && !_hud.DeliveryPanel.CanBowl && _practice.Error.Length > 0;
+
+        _hud.DeliveryPanel.SetSettings(new());
+        valid &= await WaitForDelivery();
+        _hud.DeliveryPanel.Hide(); RefreshPause();
+        SmokeButton(JoyButton.DpadUp);
+        valid &= _simulation.Phase == DeliveryPhase.Windup && !_hud.DeliveryPanel.Visible;
+        SmokeButton(JoyButton.Start); SmokeButton(JoyButton.DpadUp); SmokeButton(JoyButton.A);
+        valid &= _menu.Visible && !_nextDeliveryRequested && !_paused;
+        SmokeButton(JoyButton.A); SmokeButton(JoyButton.A);
+        valid &= _simulation.Phase == DeliveryPhase.Setup && !_hud.DeliveryPanel.Visible;
+        GD.Print(valid ? "SMOKE PASS: first ball, repeated requests, pause cancels preparation, invalid settings stay editable." :
+            "SMOKE FAIL: delivery request cancellation or invalid preparation.");
+        return valid;
+    }
+
+    private bool SticksLeaveFocusUnchanged()
+    {
+        var focused = GetViewport().GuiGetFocusOwner();
+        bool valid = true;
+        foreach (var axis in new[] { JoyAxis.LeftX, JoyAxis.LeftY, JoyAxis.RightX, JoyAxis.RightY })
+        {
+            SmokeAxis(axis);
+            valid &= focused == GetViewport().GuiGetFocusOwner();
+        }
+        return valid;
     }
 }

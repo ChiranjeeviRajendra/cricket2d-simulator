@@ -11,6 +11,14 @@ public static class BattingControls
         Defence="shot_defence", Push="shot_push", HighFinish="shot_high_finish";
     public static void Register()
     {
+        // Godot's built-in UI actions include analog axes, including native popups.
+        // Keep sticks available to batting while UI navigation uses the D-pad only.
+        foreach (var action in InputMap.GetActions())
+        {
+            if (!action.ToString().StartsWith("ui_", StringComparison.Ordinal)) continue;
+            foreach (var input in InputMap.ActionGetEvents(action))
+                if (input is InputEventJoypadMotion) InputMap.ActionEraseEvent(action, input);
+        }
         Axis("swing_left",Key.A,JoyAxis.LeftX,-1);
         Axis("swing_right",Key.D,JoyAxis.LeftX,1);
         Axis("swing_up",Key.W,JoyAxis.LeftY,-1);
@@ -38,6 +46,10 @@ public static class BattingControls
     public static bool IsPause(InputEvent evt) =>
         evt is InputEventJoypadButton { Pressed:true, ButtonIndex:JoyButton.Start } ||
         evt is InputEventKey { Pressed:true, Echo:false, Keycode:Key.Space };
+
+    public static bool IsNextDelivery(InputEvent evt) =>
+        evt is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.DpadUp } ||
+        evt is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Up };
 
     private static void Axis(string name,Key key,JoyAxis axis,float direction)
     {

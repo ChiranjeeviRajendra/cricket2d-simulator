@@ -266,3 +266,24 @@ Mode selection now runs every fixed tick, including ready, active, held-finish a
 The prior short run averaged 471.84 FPS in live batting and 351.64 FPS during camera motion. These samples do not establish an isolated improvement; camera p99 increased from 3.725 to 4.350 ms. Every measured window recorded zero managed collections. Live/camera allocations were 250 bytes per rendered frame including diagnostics, and live physics p95 was 1.788 ms. Native resource count stayed at 26; working set ranged 273.0–309.0 MiB. No fresh VSync, packaged-export, end-to-end latency or prolonged-memory claim follows from this run.
 
 Validation: 55/55 Release core checks passed, including regressions that failed before the fixes, mode changes throughout the entire arc and recovery, unclipped stick position after leaving X/B, Y blade angles, and mode-change collision velocity over all substeps. Debug and ExportRelease builds had zero warnings/errors. Native Godot controller-event checks passed for mode selection before, during and after a stroke and Y's 2-to-3 blade turn. The 1,476-pose/seven-clip rendered anatomy audit passed; Y captures near arm clocks 2, 1 and 12 were inspected. Blender review actions and the imported character asset were refreshed. No physical controller was connected.
+
+## Controller pause and delivery flow — 2026-11-09
+
+Start now opens a reusable pause menu, D-pad Up requests the next ball through the existing asynchronous preparation worker, and leaving practice resets settings and guides. Menu navigation uses input events; removing stick navigation also removes the main menu and settings panel's per-frame repeat callbacks. The pause menu is constructed once with the HUD. No rendering cap or physics frequency changed.
+
+The current `artifacts/performance-batsman-uncapped.json` records ExportRelease assemblies in the local Godot 4.7.2 runner on Ryzen 7 7800X3D / RTX 4080 SUPER, GL Compatibility, with a verified 3840 × 2160 render target, engine FPS cap zero and VSync disabled only for this diagnostic. Each of eight scenarios used two seconds of warm-up and three seconds of sampling, one cycle.
+
+| Scenario | Average FPS | 1% low FPS | Frame p99 ms |
+| --- | ---: | ---: | ---: |
+| Ready | 2007.98 | 874.06 | 0.775 |
+| Live batting | 475.94 | 289.09 | 2.891 |
+| Wide view | 1113.69 | 558.95 | 1.465 |
+| Moving camera | 349.13 | 257.46 | 3.577 |
+| Settings drag | 1170.04 | 665.28 | 1.264 |
+| Delivery resets | 2044.94 | 1104.42 | 0.740 |
+| Main menu | 3227.77 | 1582.30 | 0.549 |
+| Random practice | 1679.52 | 944.92 | 0.903 |
+
+Every sampling window recorded zero managed collections. Live batting allocated 258 bytes per rendered frame including diagnostics; physics p95 was 1.840 ms. Native resource count remained 27 across all scenarios, and working set ranged 265.4–302.1 MiB. Live/camera averages are close to the prior short run; these samples do not establish an isolated performance improvement or sustained 4K/120 performance. This was not a packaged export or prolonged memory test.
+
+Validation: Debug and ExportRelease builds completed with zero warnings/errors; 56/56 Release core checks passed. Godot input smoke checks covered first/next delivery, repeated requests, cancellation on pause, invalid preparation, frozen ball/statistics, pause focus recovery, settings persistence until leaving practice, default restoration and blocked stick navigation in menus/sliders/native dropdowns. Rendered pause/menu settings captures were inspected. Controller events were injected; no physical controller was connected.
