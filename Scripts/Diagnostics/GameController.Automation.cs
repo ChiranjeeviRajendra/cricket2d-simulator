@@ -206,6 +206,11 @@ public partial class GameController
             Godot.Input.ParseInputEvent(new InputEventJoypadButton { Device=0,ButtonIndex=button,Pressed=pressed });
             Godot.Input.FlushBufferedEvents();
         }
+        void Clock(double clock)
+        {
+            double angle=clock*Math.PI/180;
+            Axis(JoyAxis.LeftX,(float)Math.Sin(angle));Axis(JoyAxis.LeftY,-(float)Math.Cos(angle));
+        }
         bool valid=true;
         Axis(JoyAxis.RightX,1);Axis(JoyAxis.RightY,-1);
         valid &= BattingControls.Read().RightX==0 && BattingControls.Read().RightY==0;
@@ -215,86 +220,44 @@ public partial class GameController
         {
             Hold(button,true);
             valid &= BattingControls.Read().Shot==shot && !_menu.Visible && !_hud.DeliveryPanel.Visible;
-            var rig=new BattingRig(_simulation.Settings,_simulation.Batting);
-            rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
-            valid &= rig.Frame.Shot==shot;
-            Axis(JoyAxis.LeftX,1);Axis(JoyAxis.LeftY,0);
-            for(int i=0;i<120;i++)rig.Step(BattingControls.Read(),1.0/120,_settings);
+            var rig=new BattingRig(_settings,_batting);
+            Clock(90);
+            for(int i=0;i<120;i++)rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
             valid &= rig.Frame.SwingProgress==0;
             Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
-            rig.Step(BattingControls.Read(),1.0/120,_settings);
-            for(int i=0;i<=SwingGesture.StartClockDegrees;i++)
+            rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
+            for(int clock=255;clock>=0;clock--)
             {
-                double angle=(SwingGesture.StartClockDegrees-i)*Math.PI/180;
-                Axis(JoyAxis.LeftX,(float)Math.Sin(angle));Axis(JoyAxis.LeftY,-(float)Math.Cos(angle));
-                rig.Step(BattingControls.Read(),1.0/120,_settings);
-                if(i>=7)
-                {
-                    double stop=shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0;
-                    valid &= Math.Abs(rig.SwingClockDegrees-Math.Max(stop,SwingGesture.StartClockDegrees-i))<.001;
-                }
+                Clock(clock);
+                rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
+                valid &= rig.BatTipSpeed<=136/3.6+1e-6;
             }
-            for(int i=0;i<180;i++)rig.Step(BattingControls.Read(),1.0/120,_settings);
-            valid &= Math.Abs(rig.SwingClockDegrees-(shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0))<.001 && rig.Frame.Shot==shot;
+            for(int i=0;i<180;i++)rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
+            double stop=shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0;
+            valid &= Math.Abs(rig.SwingClockDegrees-stop)<.001 && rig.Frame.Shot==shot;
             Hold(button,false);
+            valid &= BattingControls.Read().Shot==null;
+            for(int i=0;i<120;i++)rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
+            var held=rig.Pose;
+            Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
+            for(int i=0;i<120;i++)rig.Step(BattingControls.Read(),SimulationSettings.Tick,_settings);
+            valid &= rig.Pose==held && rig.Frame.Shot==shot;
         }
         Axis(JoyAxis.TriggerRight,.5f);Axis(JoyAxis.TriggerLeft,.25f);
         valid &= Math.Abs(BattingControls.Read().FrontWeight-.5)<.001 && Math.Abs(BattingControls.Read().BackWeight-.25)<.001;
         Axis(JoyAxis.TriggerRight,0);Axis(JoyAxis.TriggerLeft,0);
         var rehearsal=new Simulation(_settings,_batting);
-        foreach(double clock in new[]{315.0,300,285,270,255,243,210,180}) Rehearse(clock);
-        valid &= Math.Abs(rehearsal.Batter.SwingClockDegrees-180)<.001;
-        Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
-        rehearsal.Tick(BattingControls.Read());
-        foreach(double clock in new[]{255.0,243,210,180}) Rehearse(clock);
-        valid &= Math.Abs(rehearsal.Batter.SwingClockDegrees-180)<.001 && rehearsal.Phase==DeliveryPhase.Setup;
-        Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
-        rehearsal.Tick(BattingControls.Read());
-        for(int travel=0;travel<=975;travel+=3)
+        foreach(double clock in new[]{315.0,300,285,270,255,243,210,180})
         {
-            double clock=ClockCurve.Wrap(255-travel);
-            Rehearse(clock);
-            if(clock==180) valid &= Math.Abs(rehearsal.Batter.SwingClockDegrees-180)<.001;
+            Clock(clock);rehearsal.Tick(BattingControls.Read());
         }
-        // Change buttons on a held stick, including at the end of the arc. No release/re-arm is allowed.
-        Rehearse(45);
-        foreach(double clock in new[]{90.0,60,30,0})
-        {
-            Rehearse(clock);
-            foreach(var (button,shot) in new[]{(JoyButton.X,ShotStyle.Defence),(JoyButton.B,ShotStyle.Push),
-                (JoyButton.Y,ShotStyle.HighFinish),(JoyButton.A,ShotStyle.FullDrive)})
-            {
-                Hold(button,true);
-                Rehearse(clock);
-                double stop=shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0;
-                valid &= rehearsal.Batter.Frame.Shot==shot && !rehearsal.Batter.BeganStroke &&
-                    Math.Abs(rehearsal.Batter.SwingClockDegrees-Math.Max(stop,clock))<.001;
-                if(shot==ShotStyle.HighFinish)
-                {
-                    double bladeClock=clock>=60?clock:90-clock/2;
-                    double expectedAngle=(bladeClock-270)*Math.PI/180;
-                    valid &= Math.Abs(rehearsal.Batter.Pose.Bat.Angle-expectedAngle)<.0001;
-                }
-                Hold(button,false);
-                Rehearse(clock);
-                valid &= rehearsal.Batter.Frame.Shot==ShotStyle.FullDrive &&
-                    Math.Abs(rehearsal.Batter.SwingClockDegrees-clock)<.001;
-            }
-        }
+        for(int i=0;i<240;i++)rehearsal.Tick(BattingControls.Read());
+        valid &= Math.Abs(rehearsal.Batter.SwingClockDegrees-180)<.001 &&
+            rehearsal.Phase==DeliveryPhase.Setup && rehearsal.TickCount==0;
         Axis(JoyAxis.LeftX,0);Axis(JoyAxis.LeftY,0);
-        Hold(JoyButton.Y,true);
-        rehearsal.Tick(BattingControls.Read());
-        valid &= rehearsal.Batter.Frame.Shot==ShotStyle.HighFinish && !rehearsal.Batter.GestureEngaged;
-        Hold(JoyButton.Y,false);
-        GD.Print(valid?"SMOKE PASS: 8:30 clock tracking, live mode changes, Y blade 2-to-3, re-arming and triggers.":"SMOKE FAIL: batting input or shot mapping.");
+        GD.Print(valid?"SMOKE PASS: capped swing, held shot release, shot endpoints, idle rehearsal and triggers.":
+            "SMOKE FAIL: batting input or shot mapping.");
         return valid;
-
-        void Rehearse(double clock)
-        {
-            double angle=clock*Math.PI/180;
-            Axis(JoyAxis.LeftX,(float)Math.Sin(angle));Axis(JoyAxis.LeftY,-(float)Math.Cos(angle));
-            rehearsal.Tick(BattingControls.Read());
-        }
     }
 
     private void SaveCapture(string path)

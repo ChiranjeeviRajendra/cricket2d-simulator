@@ -31,7 +31,7 @@ internal static class AnimationChecks
             for(int j=0;j<8;j++)rig.Step(BattingChecks.AtClock(120+120*Math.Cos(tick*.014),tick*3,
                 (Math.Sin(tick*.02)+1)/2,(Math.Cos(tick*.017)+1)/2),1.0/960,physics);
             for(int n=0;n<=4;n++)
-                BattingChecks.Validate(BattingRig.BuildPose(BattingFrame.Interpolate(previous,rig.Frame,n/4.0),rig.Settings,physics),rig.Settings);
+                BattingChecks.Validate(BattingRig.BuildPose(BattingFrame.Interpolate(previous,rig.Frame,n/4.0),rig.Settings),rig.Settings);
         }
     }
     public static void Playback()

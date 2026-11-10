@@ -1,5 +1,5 @@
 {
   "Input": { "LeftDeadZone": 0.45, "SwingEngageRadius": 0.60, "RotationThresholdDegrees": 6, "StartWindowDegrees": 15, "MaxSampleArcDegrees": 65, "TriggerDeadZone": 0.04 },
-  "Swing": { "RecoveryDegreesPerSecond": 240 },
-  "Body": { "GripSpacingMetres": 0.105, "TransferSeconds": 0.28, "StepSeconds": 0.24, "FrontStrideMetres": 0.42, "BackStrideMetres": 0.14, "StepLiftMetres": 0.055, "RearHeelDegrees": 58 }
+  "Swing": { "StartSpeedKph": 50, "MaxSpeedKph": 136, "AccelerationDegrees": 25, "BrakingDegrees": 10 },
+  "Body": { "GripSpacingMetres": 0.105, "TransferSeconds": 0.28, "StepSeconds": 0.24, "FrontStrideMetres": 0.60, "DefaultForwardWeight": 0.35, "BackStrideMetres": 0.14, "StepLiftMetres": 0.055, "RearHeelDegrees": 58 }
 }

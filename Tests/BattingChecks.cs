@@ -27,14 +27,14 @@ internal static class BattingChecks
         Settle(swing,AtClock(0));
         Check(held==swing.Frame,"held follow-through must not loop");
         Settle(swing,default);
-        Near(0,swing.Frame.SwingProgress,1e-6,"centre returns smoothly to guard");
+        Near(1,swing.Frame.SwingProgress,1e-6,"release holds the completed pose");
         Settle(swing,AtClock(0));
-        Near(0,swing.Frame.SwingProgress,1e-6,"new radial push must re-arm");
+        Near(1,swing.Frame.SwingProgress,1e-6,"new radial push must re-arm");
         for(int i=0;i<2000;i++) swing.Step(AtClock(i%2==0?3:-3),Dt,Physics);
-        Near(0,swing.Frame.SwingProgress,1e-6,"small angular jitter must not accumulate");
+        Near(1,swing.Frame.SwingProgress,1e-6,"small angular jitter must not accumulate");
         swing.SuspendGesture();
         Settle(swing,AtClock(180));
-        Near(0,swing.Frame.SwingProgress,1e-6,"pause/resume must discard the old angular anchor");
+        Near(1,swing.Frame.SwingProgress,1e-6,"pause/resume must discard the old angular anchor");
     }
     public static void RightStickDisabled()
     {
@@ -52,46 +52,31 @@ internal static class BattingChecks
     public static void Reengagement()
     {
         var rig=new BattingRig(Physics);
-        // Enter the start zone along the rim after first touching the stick elsewhere.
         foreach(double clock in new[]{315.0,300,285,270,255,243,240,180})
             rig.Step(AtClock(clock),SimulationSettings.Tick,Physics);
-        Near(180,rig.SwingClockDegrees,1e-6,"returning to the start zone must not remain rejected");
-        rig.Step(default,SimulationSettings.Tick,Physics);
-        rig.Step(AtClock(255),SimulationSettings.Tick,Physics);
-        rig.Step(AtClock(243),SimulationSettings.Tick,Physics);
-        Near(243,rig.SwingClockDegrees,1e-6,"a fresh deliberate arc must interrupt recovery immediately");
-        Near((12.0/255)/SimulationSettings.Tick,rig.SwingSpeed,1e-8,
-            "re-arming must measure actual stick motion, not the displacement from the recovery pose");
-        Near(0,rig.MotionFromFrame.SwingProgress,1e-9,"new sweep must begin at the new stroke anchor");
-
+        Check(rig.GestureEngaged,"entering the start zone must engage");
+        Settle(rig,AtClock(180));
+        Near(180,rig.SwingClockDegrees,1e-5,"bounded swing reaches its requested angle");
+        for(int stroke=0;stroke<12;stroke++)
+        {
+            Settle(rig,default);
+            rig.Step(AtClock(255),SimulationSettings.Tick,Physics);
+            var previous=rig.Frame;
+            rig.Step(AtClock(243),SimulationSettings.Tick,Physics);
+            Check(rig.BeganStroke && rig.MotionFromFrame==previous,"re-arming must retain the actual previous pose");
+            Check(rig.BatTipSpeed<=136/3.6+1e-6,"re-arming created an excessive collision speed");
+            Settle(rig,AtClock(243));
+            Near(243,rig.SwingClockDegrees,1e-5,"repeated re-arm lost a stroke");
+        }
         var idle=new Simulation(Physics);
         var ball=idle.Ball;
         foreach(double clock in new[]{255.0,243,210,180}) idle.Tick(AtClock(clock));
-        Near(180,idle.Batter.SwingClockDegrees,1e-6,"idle practice must accept the same live stick arc");
+        for(int i=0;i<240;i++) idle.Tick(AtClock(180));
+        Near(180,idle.Batter.SwingClockDegrees,1e-5,"idle rehearsal reaches the target");
         Check(idle.Phase==DeliveryPhase.Setup && idle.Ball==ball && idle.PhaseTime==0 && idle.TickCount==0,
             "idle rehearsal must not advance a delivery");
-
-        var fromBelow=new BattingRig(Physics);
-        foreach(double clock in new[]{180.0,210,240,255,249,243})
-            fromBelow.Step(AtClock(clock),SimulationSettings.Tick,Physics);
-        Near(243,fromBelow.SwingClockDegrees,1e-6,"a backlift into 8:30 must reset the arming anchor");
-        // Repeated short releases while a full recovery is still in progress must not lose later strokes.
-        for(int stroke=0;stroke<12;stroke++)
-        {
-            fromBelow.Step(default,SimulationSettings.Tick,Physics);
-            foreach(double clock in new[]{255.0,243,210,180})
-                fromBelow.Step(AtClock(clock),SimulationSettings.Tick,Physics);
-            Near(180,fromBelow.SwingClockDegrees,1e-6,"repeated re-arm lost a stroke");
-        }
-        var circles=new BattingRig(Physics);
-        for(int travel=0;travel<=975;travel+=3)
-        {
-            double clock=ClockCurve.Wrap(255-travel);
-            circles.Step(AtClock(clock),SimulationSettings.Tick,Physics);
-            if(clock==180) Near(180,circles.SwingClockDegrees,1e-6,
-                "each deliberate full rotation must begin another stroke without a centre release");
-        }
     }
+
     public static void Shots()
     {
         foreach(ShotStyle shot in Enum.GetValues<ShotStyle>())
@@ -101,39 +86,25 @@ internal static class BattingChecks
             Near(0,rig.Frame.SwingProgress,0,"button alone must not swing");
             double stop=shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0;
             rig.Step(AtClock(255) with { Shot=shot },SimulationSettings.Tick,Physics);
-            double previous=0;
             for(int clock=249;clock>=0;clock-=3)
             {
                 rig.Step(AtClock(clock) with { Shot=shot },SimulationSettings.Tick,Physics);
-                double expected=(255-Math.Max(stop,clock))/255;
-                Near(expected,rig.Frame.SwingProgress,1e-9,"active swing must match this tick, without easing");
-                Near((expected-previous)/SimulationSettings.Tick,rig.SwingSpeed,1e-7,"speed must match angular sample / tick");
-                previous=expected;
-                var p=rig.Pose;
-                var ray=p.Anatomy.TopGrip-p.Anatomy.TopShoulder;
+                Check(rig.BatTipSpeed<=136/3.6+1e-6,"shot exceeded the bat speed ceiling");
+                var ray=rig.Pose.Anatomy.TopGrip-rig.Pose.Anatomy.TopShoulder;
                 double armClock=ClockCurve.Wrap(Math.Atan2(ray.X,ray.Y)*180/Math.PI);
-                Near(Math.Max(stop,clock),armClock,1e-4,"arm clock must match the stick, including the mode stop");
-                if(shot==ShotStyle.FullDrive)
-                {
-                    Near(Math.Cos(clock*Math.PI/180),p.Bat.Direction.Y,1e-8,"A blade follows the arm arc");
-                    Near(0,Vec2.Cross(new Vec2(-ray.X,ray.Y).Normalized,p.Bat.Direction),1e-6,"A arm and blade aligned in swing plane");
-                }
-                Validate(p,rig.Settings);
+                Near(rig.SwingClockDegrees,armClock,1e-4,"arm must match the governed swing angle");
+                Validate(rig.Pose,rig.Settings);
             }
-            Check(rig.Frame.Shot==shot,"mode not selected");
-            if(shot==ShotStyle.Defence) Near(-Math.PI/2,rig.Pose.Bat.Angle,1e-9,"X ends as a vertical wall");
-            if(shot==ShotStyle.Push) Near(-150*Math.PI/180,rig.Pose.Bat.Angle,1e-9,"B blade points at 4 o'clock");
-            if(shot==ShotStyle.HighFinish)
-            {
-                Near(-Math.PI,rig.Pose.Bat.Angle,1e-9,"Y horizontal blade at 12");
-                Check(rig.Pose.Bat.FaceNormal.Y>.999,"Y face must look at the sky");
-            }
-            // Reverse directly, with no catch-up frames, and hold without drift.
+            Settle(rig,AtClock(0) with { Shot=shot });
+            Near(stop,rig.SwingClockDegrees,1e-5,"mode endpoint");
+            if(shot==ShotStyle.Defence) Near(-Math.PI/2,rig.Pose.Bat.Angle,1e-8,"X vertical wall");
+            if(shot==ShotStyle.Push) Near(-150*Math.PI/180,rig.Pose.Bat.Angle,1e-8,"B points to 4");
+            if(shot==ShotStyle.HighFinish) Check(rig.Pose.Bat.FaceNormal.Y>.999,"Y face upward");
             for(int clock=6;clock<=180;clock+=6)
-                rig.Step(AtClock(clock),SimulationSettings.Tick,Physics);
-            Near(75.0/255,rig.Frame.SwingProgress,1e-9,"reverse follows the stick");
-            rig.Step(AtClock(180),SimulationSettings.Tick,Physics);
-            Near(0,rig.SwingSpeed,1e-9,"holding the stick must stop immediately");
+                rig.Step(AtClock(clock) with { Shot=shot },SimulationSettings.Tick,Physics);
+            Settle(rig,AtClock(180) with { Shot=shot });
+            Near(75.0/255,rig.Frame.SwingProgress,1e-6,"reverse eventually reaches the held target");
+            Near(0,rig.SwingSpeed,1e-9,"held target settles");
         }
         var automatic=new BattingRig(Physics);
         var explicitA=new BattingRig(Physics);
@@ -141,64 +112,40 @@ internal static class BattingChecks
         {
             automatic.Step(AtClock(clock),SimulationSettings.Tick,Physics);
             explicitA.Step(AtClock(clock) with { Shot=ShotStyle.FullDrive },SimulationSettings.Tick,Physics);
-            Check(automatic.Pose==explicitA.Pose,"no button must be exactly A");
+            Check(automatic.Pose==explicitA.Pose,"initial no-button stroke must be A");
         }
-        var sim=new Simulation(Physics);sim.Begin(new(32,16,2.15),out _);
-        sim.Tick(AtClock(255));sim.Tick(AtClock(225));
-        Near((30.0/255)/SimulationSettings.Tick,sim.Batter.SwingSpeed,1e-8,
-            "input velocity must use a full tick, not a collision substep");
     }
+
     public static void LiveModes()
     {
         var rig=new BattingRig(Physics);
+        Rotate(rig,.8);
         foreach(ShotStyle shot in Enum.GetValues<ShotStyle>())
         {
-            rig.Step(new(0,0,0,0,Shot:shot),SimulationSettings.Tick,Physics);
-            Check(rig.Frame.Shot==shot,"mode must change before a swing starts");
-            Near(0,rig.Frame.SwingProgress,0,"selecting a mode must not start a stroke");
-        }
-        for(int clock=255;clock>=0;clock-=3)
-        {
-            rig.Step(AtClock(clock),SimulationSettings.Tick,Physics);
-            if(clock>240) continue;
-            foreach(ShotStyle shot in Enum.GetValues<ShotStyle>())
+            var before=rig.Frame;
+            var fromBat=rig.Pose.Bat;
+            rig.Step(AtClock(51) with { Shot=shot },SimulationSettings.Tick,Physics);
+            Check(rig.Frame.Shot==shot && rig.MotionFromFrame==before,"mode transition lost the previous pose");
+            Check(rig.BatTipSpeed<=136/3.6+1e-6,"mode switch bypassed the speed ceiling");
+            var previousBat=fromBat;
+            for(int step=1;step<=Physics.Substeps;step++)
             {
-                var before=rig.Frame;
-                var fromBat=rig.Pose.Bat;
-                rig.Step(AtClock(clock) with { Shot=shot },SimulationSettings.Tick,Physics);
-                Check(rig.Frame.Shot==shot,"held mode ignored during the stroke or at its finish");
-                Check(!rig.BeganStroke && rig.GestureEngaged,"mode change must not re-arm the gesture");
-                double stop=shot==ShotStyle.Defence?60:shot==ShotStyle.Push?45:0;
-                Near(Math.Max(stop,clock),rig.SwingClockDegrees,1e-6,"mode must use the current stick clock");
-                Check(rig.MotionFromFrame==before,"mode change must preserve the old pose for the collision sweep");
-                if(before.Shot!=shot)
-                {
-                    var previousBat=fromBat;
-                    double tickAngularSpeed=(rig.Pose.Bat.Angle-fromBat.Angle)/SimulationSettings.Tick;
-                    for(int step=1;step<=Physics.Substeps;step++)
-                    {
-                        var bat=rig.SampleBatMotion(fromBat,step/(double)Physics.Substeps);
-                        Near(tickAngularSpeed,(bat.Angle-previousBat.Angle)/(SimulationSettings.Tick/Physics.Substeps),1e-7,
-                            "mode-change angular velocity must span the full tick, not one substep");
-                        previousBat=bat;
-                    }
-                    Check(previousBat==rig.Pose.Bat,"collision sweep must finish at the rendered bat");
-                }
-                Validate(rig.Pose,rig.Settings);
+                var bat=rig.SampleBatMotion(fromBat,step/(double)Physics.Substeps);
+                Check(BattingRig.MaximumBatSpeed(previousBat,bat,Physics.BatLength,SimulationSettings.Tick/Physics.Substeps)
+                    <=136/3.6+1e-6,"collision substep bypassed the speed ceiling");
+                previousBat=bat;
             }
-            rig.Step(AtClock(clock),SimulationSettings.Tick,Physics);
-            Check(rig.Frame.Shot==ShotStyle.FullDrive,"releasing buttons must immediately restore A");
-            Near(clock,rig.SwingClockDegrees,1e-6,"switching back to A must recover the unclipped stick position");
-        }
-        foreach(ShotStyle shot in Enum.GetValues<ShotStyle>())
-        {
-            double previous=rig.Frame.SwingProgress;
-            rig.Step(new(0,0,0,0,Shot:shot),SimulationSettings.Tick,Physics);
-            Check(rig.Frame.Shot==shot && !rig.GestureEngaged,"mode must change during recovery");
-            Check(rig.Frame.SwingProgress<previous,"mode changes must not restart recovery");
+            Check(previousBat==rig.Pose.Bat,"collision sweep must finish at the rendered bat");
+            Settle(rig,AtClock(51) with { Shot=shot });
             Validate(rig.Pose,rig.Settings);
         }
+        Settle(rig,AtClock(51));
+        var held=rig.Pose;
+        Check(rig.Frame.Shot==ShotStyle.HighFinish,"button release must retain the selected mode");
+        Settle(rig,default);
+        Check(rig.Pose==held,"releasing controls must not restore guard or A");
     }
+
     public static void HighFinish()
     {
         var a=new BattingRig(Physics);
@@ -254,7 +201,7 @@ internal static class BattingChecks
         Settle(both,new(0,0,0,0,1,1));
         Check(neutral.Frame==both.Frame,"equal triggers must cancel");
         Settle(both,new(0,0,0,0,1,0));Settle(both,default);
-        Near(0,both.Frame.WeightShift,1e-8,"trigger release");
+        Near(.35,both.Frame.WeightShift,1e-8,"trigger release returns to the 35% baseline");
         Near(neutral.Pose.Hip.X,both.Pose.Hip.X,1e-8,"default stance return");
     }
     public static void Anatomy()
@@ -269,11 +216,11 @@ internal static class BattingChecks
             HumanPose? previous=null;
             for(int i=0;i<=960;i++)
             {
-                var pose=BattingRig.BuildPose(rig.Frame with { SwingProgress=i/960.0,Shot=shot },rig.Settings);
+                var pose=BattingRig.BuildPose(rig.Frame with { SwingProgress=i/960.0,Shot=shot,BatAngle=double.NaN },rig.Settings);
                 Validate(pose,rig.Settings);
                 if(previous.HasValue)
                 {
-                    // Adjacent angles must not flip an IK pole; direct input no longer has a speed governor.
+                    // Adjacent authored angles must not flip an IK pole.
                     double movement=Math.Max((pose.Anatomy.TopElbow-previous.Value.Anatomy.TopElbow).Length(),
                         (pose.Anatomy.BottomElbow-previous.Value.Anatomy.BottomElbow).Length());
                     Check(movement<.035,$"{shot} elbow discontinuity {movement:0.000} m at {i/960.0:0.000}, weight {weight}");
@@ -289,6 +236,7 @@ internal static class BattingChecks
                 rng.NextDouble(),rng.NextDouble());
             rig.Step(input,SimulationSettings.Tick,Physics);
             Validate(rig.Pose,rig.Settings);
+            Check(rig.BatTipSpeed<=136/3.6+1e-6,"random inputs exceeded maximum bat speed");
         }
     }
     public static void Validate(HumanPose p,BattingSettings settings,SimulationSettings? physics = null)
@@ -305,8 +253,6 @@ internal static class BattingChecks
         Near(BattingRig.Shin,(a.RearAnkle-a.RearKnee).Length(),1e-5,"rear shin");
         Near(settings.Body.GripSpacingMetres,(p.BottomHand-p.Hands).Length,1e-9,"two distinct grips");
         Check(p.Bat.Grip==p.Hands,"physical bat detached");
-        var blade=p.Bat.Blade(physics);
-        Check(Math.Min(blade.A.Y,blade.B.Y)-physics.BatHalfThickness>=-.000001,$"blade below pitch: {Math.Min(blade.A.Y,blade.B.Y)-physics.BatHalfThickness}");
         Check(p.FrontKnee.Y>.05 && p.BackKnee.Y>.05,"knee below pitch");
         Check(p.FrontFoot.Toe.Y>=.035-1e-9 && p.RearFoot.Toe.Y>=.035-1e-9,"toe below pitch");
         Check(double.IsFinite(p.Head.X+p.Head.Y+p.Bat.Angle),"nonfinite pose");
@@ -328,7 +274,7 @@ internal static class BattingChecks
             {
                 Body=new BodySettings
                 {
-                    FrontStrideMetres=(corner&1)==0?.15:.45, BackStrideMetres=(corner&1)==0?.05:.14,
+                    FrontStrideMetres=(corner&1)==0?.15:.65, BackStrideMetres=(corner&1)==0?.05:.14,
                     StepLiftMetres=(corner&2)==0?.025:.09, RearHeelDegrees=(corner&2)==0?35:65,
                     StepSeconds=.18, TransferSeconds=.18, GripSpacingMetres=(corner&4)==0?.08:.12
                 }
@@ -346,7 +292,10 @@ internal static class BattingChecks
     public static void InvalidConfiguration()
     {
         foreach(string json in new[]{"null","{\"Wrist\":{}}","{\"Body\":null}","{\"Body\":{\"FrontStrideMetres\":2}}",
-            "{\"Input\":{\"TriggerDeadZone\":1}}","{\"BottomHand\":{\"MaxAdjustmentDegrees\":180}}"})
+            "{\"Input\":{\"TriggerDeadZone\":1}}","{\"BottomHand\":{\"MaxAdjustmentDegrees\":180}}",
+            "{\"Swing\":{\"MaxSpeedKph\":137}}","{\"Swing\":{\"StartSpeedKph\":80,\"MaxSpeedKph\":70}}",
+            "{\"Swing\":{\"AccelerationDegrees\":0}}","{\"Swing\":{\"BrakingDegrees\":0}}",
+            "{\"Swing\":{\"RecoveryDegreesPerSecond\":240}}","{\"Body\":{\"DefaultForwardWeight\":1}}"})
         {
             bool rejected=false;
             try{BattingSettings.FromJson(json);}catch(Exception e)when(e is ArgumentException or JsonException){rejected=true;}

@@ -13,7 +13,8 @@ internal static class BattingStroke
 
     public static StrokePose Sample(double progress, ShotStyle style)
     {
-        double travel=Math.Clamp(progress,0,MaximumProgress(style))*SwingGesture.StartClockDegrees;
+        // The motor enforces each mode's endpoint. A live mode change must not teleport the arms.
+        double travel=Math.Clamp(progress,0,1)*SwingGesture.StartClockDegrees;
         double armDegrees=90-SwingGesture.StartClockDegrees+travel;
         double faceTurn=Smooth(travel/(SwingGesture.StartClockDegrees-90));
         double bladeDegrees=style switch

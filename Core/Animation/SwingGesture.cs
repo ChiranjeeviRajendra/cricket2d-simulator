@@ -8,7 +8,6 @@ public sealed class SwingGesture
     private double _previousAngle, _clock, _anchorClock;
     public bool Engaged { get; private set; }
     public double Target { get; private set; }
-    public double PreviousTarget { get; private set; }
 
     public void Step(double x, double y, StickSettings settings)
     {
@@ -29,7 +28,6 @@ public sealed class SwingGesture
         _previousAngle=angle;
         if (Math.Abs(delta)>settings.MaxSampleArcDegrees)
         { Reset(); return; }
-        PreviousTarget=Math.Clamp((StartClockDegrees-_clock)/StartClockDegrees,0,1);
         _clock+=delta;
         // Leaving the legal arc completes this gesture. Keep seeking the start on the rim,
         // rather than accumulating another revolution and pinning every later stroke at 12.
@@ -47,5 +45,5 @@ public sealed class SwingGesture
         Target=Math.Clamp((StartClockDegrees-_clock)/StartClockDegrees,0,1);
     }
 
-    public void Reset() { _tracking=Engaged=false; _previousAngle=_clock=_anchorClock=Target=PreviousTarget=0; }
+    public void Reset() { _tracking=Engaged=false; _previousAngle=_clock=_anchorClock=Target=0; }
 }

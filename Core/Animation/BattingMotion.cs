@@ -18,7 +18,7 @@ public readonly record struct FootPose(Vec2 Toe, double Angle, FootContact Conta
 
 /// <summary>Compact replay state. Reconstruct constrained joints after interpolating controls.</summary>
 public readonly record struct BattingFrame(double SwingProgress, double WeightShift, ShotStyle Shot,
-    FootPose FrontFoot, FootPose RearFoot, BattingMotionState State)
+    FootPose FrontFoot, FootPose RearFoot, BattingMotionState State, double BatAngle = double.NaN)
 {
     public static BattingFrame Interpolate(BattingFrame a, BattingFrame b, double fraction)
     {
@@ -27,7 +27,8 @@ public readonly record struct BattingFrame(double SwingProgress, double WeightSh
             a.WeightShift + (b.WeightShift - a.WeightShift) * t,
             t < 1 ? a.Shot : b.Shot,
             FootPose.Interpolate(a.FrontFoot, b.FrontFoot, t), FootPose.Interpolate(a.RearFoot, b.RearFoot, t),
-            t < 1 ? a.State : b.State);
+            t < 1 ? a.State : b.State,
+            double.IsFinite(a.BatAngle) && double.IsFinite(b.BatAngle) ? a.BatAngle + (b.BatAngle-a.BatAngle)*t : double.NaN);
     }
 }
 /// <summary>Bounded damped weight shift and lift/plant steps. A planted foot never translates.</summary>
@@ -36,7 +37,13 @@ internal sealed class BattingMotion
     private readonly BodySettings _settings;
     private double _weight, _velocity;
     private StepFoot _front = new(BattingRig.FrontFootX), _rear = new(BattingRig.BackFootX);
-    public BattingMotion(BodySettings settings) => _settings = settings;
+    public BattingMotion(BodySettings settings)
+    {
+        _settings = settings;
+        _weight = settings.DefaultForwardWeight;
+        // Start already planted in the default stance; no unsolicited opening step.
+        _front = new(BattingRig.FrontFootX - settings.FrontStrideMetres * _weight);
+    }
     public BattingFrame Step(double requestedWeight, double swing, double swingSpeed, ShotStyle shot, double dt)
     {
         double omega = 6 / _settings.TransferSeconds;

@@ -21,7 +21,7 @@ Thus `Config/physics.json` uses `BatMass = 1.17`, `BatCentreOfMassFromGrip = 0.4
 
 [McErlain-Naylor et al. (2021), *Comparing power hitting kinematics between skilled male and female cricket batters*, Table 1 and methods](https://www.stuartmcnaylor.com/publication/male_female_batting/McErlain-Naylor_et_al_2021.pdf) reports maximum distal bat-tip speeds of **28.4 ± 2.5 m/s** for the male sample and **22.6 ± 2.3 m/s** for the female sample. These were power-hitting trials, not universal limits for every stroke. The measured point matters: tip speed is different from grip speed or the speed of the impact point.
 
-The rebuilt batsman uses authored hand travel and wrist release rather than a straight arm rotating around the shoulder. Its 600°/s forward ceiling describes progress through the 240° input arc, not human shoulder angular speed. The older 29.5 m/s tip-speed calibration no longer applies. Actual contact velocity is calculated from the moving physical bat; measured power-hitting means remain context rather than a requirement that every input produce the same speed.
+The batsman uses authored hand travel and wrist release. The current user-specified control envelope starts at 50 km/h and reaches a maximum bat-tip speed of 136 km/h over 25 degrees, with release braking within 10 degrees. These are gameplay settings, not published athlete limits. Actual contact velocity comes from the accepted moving bat; measured power-hitting means remain context. See [BATTING.md](BATTING.md) for timing and measurement details.
 
 ## Impact response and rebound
 
@@ -68,6 +68,6 @@ During gameplay, the bat remains driven by the requested pose: the calculated re
 
 ## Deliberate control choices
 
-The bounded 8-to-12 input arc, 600°/s forward and 300°/s return ceilings, ±55° bottom-hand adjustment, proportional trigger transfer and deep full-R2 kneel are gameplay choices. The cited studies do not establish these as universal human limits. The prior full-circle snap has been removed. [BATTING.md](BATTING.md#research-behind-the-motion) records the added whole-body research.
+The 8:30-to-12 control arc, 50-to-136 km/h speed envelope, 25-degree acceleration travel, 10-degree release braking, 35% default forward stance and ground-transparent bat are requested gameplay choices. The cited studies do not establish these as universal human limits. [BATTING.md](BATTING.md) records the controls and anatomical constraints.
 
 See [BATTING.md](BATTING.md) for every control parameter and [PHYSICS.md](PHYSICS.md) for SI units, numerical assumptions and the remaining coefficients.

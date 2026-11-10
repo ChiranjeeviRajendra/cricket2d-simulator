@@ -4,7 +4,7 @@ namespace Cricket.Physics;
 
 /// <summary>Screen stick axes: right/down positive. Triggers are independent normalized [0,1] pressures.</summary>
 public readonly record struct BattingInput(double LeftX, double LeftY, double RightX, double RightY,
-    double FrontWeight = 0, double BackWeight = 0, ShotStyle Shot = ShotStyle.FullDrive);
+    double FrontWeight = 0, double BackWeight = 0, ShotStyle? Shot = null);
 public readonly record struct BatPose(Vec2 Grip, double Angle)
 {
     public Vec2 Direction => Vec2.FromAngle(Angle);
@@ -26,9 +26,9 @@ public sealed class BattingRig
     public const double FrontFootX = PitchDimensions.BatterReferenceX - .26;
     public const double BackFootX = PitchDimensions.BatterReferenceX + .26;
     public const double AnkleHeight = .085;
-    private static readonly SimulationSettings DefaultPhysics = new();
-    private readonly SimulationSettings _physics;
     private readonly BattingMotion _motion;
+    private readonly SwingMotion _swingMotion;
+    private bool _shotHeld, _adjustingShot;
     private double _swing, _speed;
     private readonly SwingGesture _gesture = new();
     public bool GestureEngaged => _gesture.Engaged;
@@ -39,39 +39,91 @@ public sealed class BattingRig
     public bool BeganStroke { get; private set; }
     public double SwingClockDegrees => SwingGesture.StartClockDegrees * (1 - _swing);
     public double SwingSpeed => _speed;
+    public double BatTipSpeed { get; private set; }
 
-    public void SuspendGesture() { _gesture.Reset(); _speed=0; }
+    public void SuspendGesture() { _gesture.Reset(); _swingMotion.Stop(); _speed=BatTipSpeed=0; _shotHeld=_adjustingShot=false; }
 
     public BattingRig(SimulationSettings physics, BattingSettings? settings = null)
     {
         Settings = settings ?? new();
         Settings.Validate(physics);
-        _physics = physics;
         _motion = new(Settings.Body);
-        Frame = _motion.Step(0, 0, 0, ShotStyle.FullDrive, 0);
+        _swingMotion = new(Settings.Swing);
+        Frame = _motion.Step(Settings.Body.DefaultForwardWeight, 0, 0, ShotStyle.FullDrive, 0);
+        Pose = BuildPose(Frame, Settings);
+        Frame = Frame with { BatAngle = Pose.Bat.Angle };
         MotionFromFrame=Frame;
-        Pose = BuildPose(Frame, Settings, physics);
     }
     public void Step(BattingInput input, double dt, SimulationSettings physics)
     {
         if (!double.IsFinite(dt) || dt <= 0 || dt > .05) throw new ArgumentOutOfRangeException(nameof(dt));
         bool wasEngaged=_gesture.Engaged;
         _gesture.Step(input.LeftX,input.LeftY,Settings.Input);
+        bool releasedShot = _shotHeld && !input.Shot.HasValue;
+        _shotHeld = input.Shot.HasValue;
+        if (releasedShot) _gesture.Reset();
         BeganStroke=_gesture.Engaged && !wasEngaged;
-        ShotStyle shot=Enum.IsDefined(input.Shot)?input.Shot:ShotStyle.FullDrive;
-        double maximum=BattingStroke.MaximumProgress(shot);
-        // A valid new rotation interrupts recovery. Its velocity comes from adjacent stick samples,
-        // not from the unrelated recovery pose; resetting to the new stroke must not create a false hit.
-        double from=BeganStroke?Math.Min(_gesture.PreviousTarget,maximum):_swing;
-        MotionFromFrame=BeganStroke?Frame with { SwingProgress=from,Shot=shot }:Frame;
-        // No animation speed, acceleration, easing or catch-up on an active stroke.
-        double next = Math.Min(maximum,_gesture.Engaged?_gesture.Target:
-            Math.Max(0,_swing-Settings.Swing.RecoveryDegreesPerSecond/SwingGesture.StartClockDegrees*dt));
-        _speed = (next-from)/dt;
-        _swing = next;
-        double weight = DeadZone(input.FrontWeight, Settings.Input.TriggerDeadZone) - DeadZone(input.BackWeight, Settings.Input.TriggerDeadZone);
-        Frame = _motion.Step(weight, _swing, _speed, shot, dt);
-        Pose = BuildPose(Frame, Settings, _physics);
+        ShotStyle shot=input.Shot is { } selected && Enum.IsDefined(selected)?selected:Frame.Shot;
+        if (releasedShot || (wasEngaged && !_gesture.Engaged)) _adjustingShot=false;
+        if (input.Shot.HasValue && shot!=Frame.Shot) _adjustingShot=true;
+        MotionFromFrame=Frame;
+        double from = _swingMotion.Degrees;
+        // Measure the local tip path, including hand translation, rather than confusing arm
+        // angular speed with blade-tip linear speed. Value types keep this allocation-free.
+        double sampleDegrees = from < 254.75 ? .25 : -.25;
+        double sampleProgress = (from + sampleDegrees) / SwingGesture.StartClockDegrees;
+        double bladeDelta = (BattingStroke.Sample(sampleProgress, Frame.Shot).BatDegrees -
+            BattingStroke.Sample(_swing, Frame.Shot).BatDegrees) * Math.PI / 180;
+        var sample = BuildPose(Frame with { SwingProgress = sampleProgress, BatAngle = Frame.BatAngle + bladeDelta }, Settings);
+        double metresPerDegree = Math.Max(.002, MaximumBatSpeed(Pose.Bat, sample.Bat, physics.BatLength, 1) / Math.Abs(sampleDegrees));
+        double previousSpeed = _swingMotion.Speed;
+        _swingMotion.Step(Math.Min(_gesture.Target, BattingStroke.MaximumProgress(shot)) * SwingGesture.StartClockDegrees,
+            _gesture.Engaged, metresPerDegree, dt, SwingGesture.StartClockDegrees);
+        double next = _swingMotion.Degrees / SwingGesture.StartClockDegrees;
+        double weightInput = DeadZone(input.FrontWeight, Settings.Input.TriggerDeadZone) - DeadZone(input.BackWeight, Settings.Input.TriggerDeadZone);
+        double baseline = Settings.Body.DefaultForwardWeight;
+        double weight = baseline + weightInput * (weightInput >= 0 ? 1-baseline : 1+baseline);
+        var body = _motion.Step(weight, next, (next-_swing)/dt, shot, dt);
+        double angle = BattingStroke.Sample(next,shot).BatDegrees * Math.PI / 180;
+        if (!_gesture.Engaged && !_adjustingShot)
+        {
+            // Release retains the current blade adjustment while the arm completes braking.
+            angle = Frame.BatAngle + (BattingStroke.Sample(next, Frame.Shot).BatDegrees -
+                BattingStroke.Sample(_swing, Frame.Shot).BatDegrees) * Math.PI / 180;
+        }
+        var candidate = body with { BatAngle = angle };
+        double speedLimit = Math.Min(Settings.Swing.MaxSpeedKph / 3.6,
+            Math.Max(Settings.Swing.StartSpeedKph / 3.6, Math.Max(previousSpeed, _swingMotion.Speed)));
+        // Bound the actual swept bat, including mode changes. The conservative maximum is
+        // evaluated analytically along the same grip/angle interpolation used for collisions.
+        HumanPose pose = BuildPose(candidate, Settings);
+        for (int i=0; i<6; i++)
+        {
+            double speed = MaximumBatSpeed(Pose.Bat, pose.Bat, physics.BatLength, dt);
+            if (speed <= speedLimit + 1e-8) break;
+            double fraction = speedLimit / speed * .9999;
+            candidate = candidate with
+            {
+                SwingProgress = _swing + (candidate.SwingProgress-_swing)*fraction,
+                BatAngle = Frame.BatAngle + (candidate.BatAngle-Frame.BatAngle)*fraction
+            };
+            pose = BuildPose(candidate, Settings);
+        }
+        _swingMotion.Limit(from, candidate.SwingProgress * SwingGesture.StartClockDegrees);
+        _speed = (candidate.SwingProgress-_swing)/dt;
+        _swing = candidate.SwingProgress;
+        BatTipSpeed = MaximumBatSpeed(Pose.Bat, pose.Bat, physics.BatLength, dt);
+        // A pathological pose request must never bypass the hard ceiling after bounded work.
+        if (BatTipSpeed > Settings.Swing.MaxSpeedKph/3.6 + 1e-8)
+        {
+            _swingMotion.Limit(_swing*SwingGesture.StartClockDegrees,from);
+            _swingMotion.Stop(); _swing=Frame.SwingProgress; _speed=BatTipSpeed=0;
+            return;
+        }
+        if (Math.Abs(candidate.BatAngle-BattingStroke.Sample(_swing,shot).BatDegrees*Math.PI/180)<1e-8)
+            _adjustingShot=false;
+        Frame = candidate;
+        Pose = pose;
     }
     /// <summary>Sample the collision bat across one tick, including a live change of shot mode.</summary>
     public BatPose SampleBatMotion(BatPose from, double fraction)
@@ -79,14 +131,27 @@ public sealed class BattingRig
         double t=Math.Clamp(fraction,0,1);
         if(t==0) return from;
         if(t==1) return Pose.Bat;
-        // A mode switch changes blade orientation at the same stick angle. Spread that change
-        // across the full tick rather than applying it all in the first collision substep.
-        if(MotionFromFrame.Shot!=Frame.Shot) return BatPose.Lerp(from,Pose.Bat,t);
-        return BuildPose(BattingFrame.Interpolate(MotionFromFrame,Frame,t),Settings,_physics).Bat;
+        return BatPose.Lerp(from,Pose.Bat,t);
     }
-    public static HumanPose BuildPose(BattingFrame f, BattingSettings settings, SimulationSettings? physics = null)
+
+    /// <summary>Maximum speed anywhere on a rigid bat along the tick's interpolated motion.</summary>
+    public static double MaximumBatSpeed(BatPose from, BatPose to, double length, double dt)
     {
-        physics ??= DefaultPhysics;
+        Vec2 translation = to.Grip-from.Grip;
+        double turn = to.Angle-from.Angle, arc = length*turn;
+        double low = Math.Min(from.Angle,to.Angle), high = Math.Max(from.Angle,to.Angle);
+        double best = Math.Max(Squared(from.Angle),Squared(to.Angle));
+        if (Math.Abs(arc)>1e-12 && translation.LengthSquared>1e-20)
+        {
+            double peak = Math.Atan2(-arc*translation.X,arc*translation.Y);
+            peak += Math.Ceiling((low-peak)/Math.Tau)*Math.Tau;
+            if (peak<=high) best = Math.Max(best,Squared(peak));
+        }
+        return Math.Sqrt(Math.Max(translation.LengthSquared,best))/dt;
+        double Squared(double angle) => (translation + Vec2.FromAngle(angle).Perpendicular*arc).LengthSquared;
+    }
+    public static HumanPose BuildPose(BattingFrame f, BattingSettings settings)
+    {
         double front = Math.Max(0,f.WeightShift), back = Math.Max(0,-f.WeightShift);
         var key = BattingStroke.Sample(f.SwingProgress,f.Shot);
         double torsoYaw = key.Twist*Math.PI/180;
@@ -94,7 +159,7 @@ public sealed class BattingRig
         Vector3 frontAnkle = Point(f.FrontFoot.Ankle,f.FrontFoot.AnkleDepth);
         Vector3 rearAnkle = Point(f.RearFoot.Ankle,f.RearFoot.AnkleDepth);
         Vector3 hipOffset = AthleteMath.Turn(new(.105f,0,0),pelvisYaw);
-        float hipX=(float)(.17*front-.33*back), hipY=(float)(.93-.39*front-.02*back);
+        float hipX=(float)(.24*front-.33*back), hipY=(float)(.93-.45*front+.06*back);
         const float reach = (float)(Thigh+Shin-.008);
         // Keep both leg reach spheres intersecting during step recovery and trigger reversals.
         hipX=Math.Clamp(hipX,Math.Max(frontAnkle.X-hipOffset.X-.77f,rearAnkle.X+hipOffset.X-.77f),
@@ -112,16 +177,14 @@ public sealed class BattingRig
         Vector3 topShoulder=centre+shoulderOffset;
         Vector3 bottomShoulder=centre-shoulderOffset-new Vector3(0,.012f,0);
 
-        double batAngle=key.BatDegrees*Math.PI/180;
+        double batAngle=double.IsFinite(f.BatAngle)?f.BatAngle:key.BatDegrees*Math.PI/180;
         // Constrain reach along the requested arm ray. Moving the wrist off that ray would
-        // silently change its clock angle. Elbows bend where two-hand reach or pitch clearance requires it.
+        // silently change its clock angle. Only anatomical two-hand reach constrains extension.
         Vector3 armRay=new((float)Math.Cos(key.ArmRadians),(float)Math.Sin(key.ArmRadians),0);
         Vector3 direction=new(-(float)Math.Cos(batAngle),(float)Math.Sin(batAngle),0);
         Vector3 rayOrigin=new(topShoulder.X,topShoulder.Y,centre.Z+(float)key.Depth);
         Vector3 spacing=direction*(float)settings.Body.GripSpacingMetres;
         float extension=Math.Min(RayReach(rayOrigin,armRay,topShoulder),RayReach(rayOrigin,armRay,bottomShoulder-spacing));
-        double minimumY=.035+physics.BatLength*Math.Max(0,-Math.Sin(batAngle));
-        if(armRay.Y<-.0001f) extension=Math.Min(extension,(float)((rayOrigin.Y-minimumY)/-armRay.Y));
         Vector3 grip=rayOrigin+armRay*Math.Max(.001f,extension);
         Vec2 hands=Project(grip);
         var bat=new BatPose(hands,batAngle);

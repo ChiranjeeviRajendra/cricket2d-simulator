@@ -29,11 +29,15 @@ public sealed record BattingSettings
         Range(Input.StartWindowDegrees, 5, 30, "Input.StartWindowDegrees");
         Range(Input.MaxSampleArcDegrees, 45, 90, "Input.MaxSampleArcDegrees");
         Range(Input.TriggerDeadZone, 0, .3, "Input.TriggerDeadZone");
-        Range(Swing.RecoveryDegreesPerSecond, 90, 480, "Swing.RecoveryDegreesPerSecond");
+        Range(Swing.StartSpeedKph, 1, 136, "Swing.StartSpeedKph");
+        Range(Swing.MaxSpeedKph, Swing.StartSpeedKph, 136, "Swing.MaxSpeedKph");
+        Range(Swing.AccelerationDegrees, 5, 90, "Swing.AccelerationDegrees");
+        Range(Swing.BrakingDegrees, 1, 25, "Swing.BrakingDegrees");
         Range(Body.GripSpacingMetres, .08, .12, "Body.GripSpacingMetres");
         Range(Body.TransferSeconds, .18, .65, "Body.TransferSeconds");
         Range(Body.StepSeconds, .18, .5, "Body.StepSeconds");
-        Range(Body.FrontStrideMetres, .15, .45, "Body.FrontStrideMetres");
+        Range(Body.FrontStrideMetres, .15, .65, "Body.FrontStrideMetres");
+        Range(Body.DefaultForwardWeight, 0, .5, "Body.DefaultForwardWeight");
         Range(Body.BackStrideMetres, .05, .14, "Body.BackStrideMetres");
         Range(Body.StepLiftMetres, .025, .09, "Body.StepLiftMetres");
         Range(Body.RearHeelDegrees, 35, 65, "Body.RearHeelDegrees");
@@ -57,14 +61,18 @@ public sealed record StickSettings
 }
 public sealed record SwingSettings
 {
-    public double RecoveryDegreesPerSecond { get; init; } = 240;
+    public double StartSpeedKph { get; init; } = 50;
+    public double MaxSpeedKph { get; init; } = 136;
+    public double AccelerationDegrees { get; init; } = 25;
+    public double BrakingDegrees { get; init; } = 10;
 }
 public sealed record BodySettings
 {
     public double GripSpacingMetres { get; init; } = .105;
     public double TransferSeconds { get; init; } = .28;
     public double StepSeconds { get; init; } = .24;
-    public double FrontStrideMetres { get; init; } = .42;
+    public double FrontStrideMetres { get; init; } = .60;
+    public double DefaultForwardWeight { get; init; } = .35;
     public double BackStrideMetres { get; init; } = .14;
     public double StepLiftMetres { get; init; } = .055;
     public double RearHeelDegrees { get; init; } = 58;

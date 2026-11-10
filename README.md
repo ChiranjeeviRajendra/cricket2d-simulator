@@ -76,7 +76,7 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 | --- | --- | --- |
 | Swing | Rotate left stick counterclockwise: 8:30 → 6 → 3 → 12 | Overlapping WASD directions |
 | X: stop at 2; vertical bat face | Hold X at any point | J |
-| A: aligned arm/blade, 8:30 to 12 (default) | No button or hold A | No modifier or K |
+| A: aligned arm/blade, 8:30 to 12 (initial default) | A | K |
 | B: arms stop at 1:30; blade points at 4 | Hold B at any point | L |
 | Y: follows A to 2, then blade turns toward 3 as arms reach 12 | Hold Y at any point | I |
 | Front / back weight | R2 / L2, progressive | E / Q |
@@ -89,9 +89,9 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 | Main menu during play | Start → Main Menu | Escape → Main Menu |
 | Toggle ball trail / full screen | — | T / F11 |
 
-Start the stick beyond 60% radius near 8:30, then rotate through 6 and 3. A direct push, centre crossing or small movement cannot start a swing. After the initial 6° gate, the arm clock matches the stick on the current physics tick with no animation easing or speed limiter. Holding stops immediately; reversing reverses the stroke. Centre the stick to recover toward 8:30. A fresh deliberate rotation can interrupt that recovery immediately; an off-angle push no longer blocks later entry into the start area. Consecutive full rotations also start consecutive strokes without requiring a centre release. Change the held mode button before, during or after the swing; it applies at the current stick position without re-arming. Releasing modifiers returns to A. Free swings also work before bowling, while the delivery panel is closed. No button is A.
+Start the stick beyond 60% radius near 8:30, then rotate through 6 and 3. Deliberate rotation drives a bat-speed envelope from 50 to 136 km/h over 25 degrees. Releasing the stick or held shot button brakes within 10 degrees and holds the pose and selected mode. There is no automatic return to guard. Reversals, new arcs and live mode changes keep the physical bat within the speed limit. Free swings also work before bowling with the delivery panel closed; A is the initial mode.
 
-The right stick is inactive for now. R2 progressively shifts weight forward and lowers the rear knee; L2 moves support backward. Opposing trigger pressures cancel. See [the batting guide](docs/BATTING.md) for gesture tuning, preview controls and the Blender workflow.
+The right stick is inactive. Neutral starts at 35% forward transfer. R2/RT widens and lowers the forward stance; full L2/LT gives the tallest rear-supported stance. Equal trigger pressures cancel, and release restores baseline body weight. The bat can pass through the ground without a response. See [the batting guide](docs/BATTING.md) for settings, preview controls and the Blender workflow.
 
 Start with the default Medium bowler. For repeatable deliveries, disable random speed/length and use **95 km/h, 16 m, 2.15 m**. Controller events are covered by synthetic native checks; physical-controller feel still needs hands-on testing.
 
@@ -104,7 +104,7 @@ Start with the default Medium bowler. For repeatable deliveries, disable random 
 - Prepared-pitch bounce is calibrated against match oblique impacts; [bowling research and comparison data](docs/BOWLING_BOUNCE.md) explain the effects of length, release height and speed.
 - Swept ball-versus-moving-capsule contact detection for the bat. Impulses depend on the bat contact-point velocity, finite effective mass, rotational lever arm and friction.
 - Bat and wicket contacts; an always-visible, invulnerable batter; a trajectory trail and persistent per-delivery speed, distance and height maxima.
-- Blender-built skinned cricketer with separate grips, direct clock-angle modes, proportional trigger footwork, planted toe pivots, pelvis/spine/chest/head articulation and fixed-length limb IK. The same physical bat transform drives rendering and collisions.
+- Blender-built skinned cricketer with separate grips, speed-limited clock-angle modes, proportional trigger footwork, planted toe pivots, pelvis/spine/chest/head articulation and fixed-length limb IK. The same physical bat transform drives rendering and collisions.
 - Procedural field presentation with a configurable oval wedge, inner and outer barricades, stepped stadium seating, a static spectator crowd and an Inkscape daylight sky. Physical objects retain a shared metre scale; scenery depth uses perspective that matches the ball plane at each boundary crossing. Five compact stats and a minimum drawn ball radius keep gameplay readable during camera zoom.
 
 Tune the batsman in [`Config/batsman.json`](Config/batsman.json): `Input`, `Swing` and `Body` configure controls and motion. Edit and reload in the batting lab. [`docs/BATTING.md`](docs/BATTING.md) explains the settings, biomechanics sources, limitations and Blender workflow. Open `Art/Batsman/batsman.blend` to inspect the model and seven editable sample actions.
