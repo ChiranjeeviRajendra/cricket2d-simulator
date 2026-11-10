@@ -8,7 +8,10 @@ var tests = new (string Name, Action Run)[]
     ("Quadratic drag slows horizontal flight", Drag),
     ("1,000 oblique bounces dissipate energy including spin", BounceEnergy),
     ("Sliding ball loses energy before transitioning to rolling", GroundMotion),
-    ("Pitch and outfield bounce follow leather-ball surface references", BallSurfaceChecks.TurfBounce),
+    ("Configured pitch drops and outfield bounce remain consistent", BallSurfaceChecks.TurfBounce),
+    ("Prepared-pitch rebound matches measured seam-delivery pace and angle", DeliveryBounceChecks.MatchReference),
+    ("Release height, speed and length produce physical bounce trends", DeliveryBounceChecks.DeliveryTrends),
+    ("Live delivery bounce agrees across physics substeps", DeliveryBounceChecks.LiveBounce),
     ("Outfield rolling stops within the reference ramp-test range", BallSurfaceChecks.OutfieldRoll),
     ("Grass absorbs horizontal speed in an oblique impact", BallSurfaceChecks.AngledOutfieldBounce),
     ("Rolling across pitch edges agrees with independent work/energy predictions", BallSurfaceChecks.SurfaceTransitions),
@@ -185,7 +188,7 @@ static void Deliveries()
     var s = new SimulationSettings();
     foreach (double speed in new[] { 25.0, 32.0, 40.0, 50.0 })
     foreach (double length in new[] { 8.0, 10.0, 16.0, 25.0 })
-    foreach (double height in new[] { 1.53, 2.0, 2.16 })
+    foreach (double height in new[] { 1.53, 2.0, 2.16, 2.38, 2.40 })
     {
         var request = new DeliverySettings(speed, length, height);
         Check(DeliverySolver.TrySolve(request, s, out var plan, out string error), error);
@@ -222,14 +225,14 @@ static void DeliveryBounds()
 {
     var s = new SimulationSettings();
     Near(20.12, PitchDimensions.WicketSeparation, 0, "wicket separation");
-    foreach (double height in new[] { 1.53, 2.16 })
+    foreach (double height in new[] { 1.53, 2.16, 2.40 })
     foreach (double length in new[] { 8.0, 20.12, 25.0 })
     {
         Check(DeliverySolver.TrySolve(new(32, length, height), s, out var plan, out string error), error);
         Near(height, plan!.Release.Position.Y, 0, "release endpoint");
         Near(length, plan.PredictedPitchX, .002, "pitching length");
     }
-    foreach (double height in new[] { 1.52999, 2.16001, double.NaN, double.PositiveInfinity })
+    foreach (double height in new[] { 1.52999, 2.40001, double.NaN, double.PositiveInfinity })
         Check(!DeliverySolver.TrySolve(new(32, 16, height), s, out _, out _), "Out-of-range release height accepted.");
     foreach (double length in new[] { 7.99999, 25.00001, double.NaN, double.PositiveInfinity })
         Check(!DeliverySolver.TrySolve(new(32, length, 2), s, out _, out _), "Out-of-range pitching length accepted.");

@@ -42,7 +42,7 @@ Choose a bowler at the top of the popup. **Medium** is selected initially, with 
 | --- | --- | --- |
 | Release speed | Magnitude of velocity when the ball leaves the hand | 18–180 km/h |
 | Pitching length | First ground contact, measured **from the bowler-end wicket** toward the striker | 8–25 m |
-| Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.16 m (153–216 cm) |
+| Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.40 m (153–240 cm) |
 
 Settings retain their unnumbered boxes and live value badges. The pitch diagram uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Use mouse drag, arrows or D-pad. Up/down and Tab/Shift+Tab navigate visible controls; hidden sliders are skipped. The body scrolls when expanded, while the primary button and delivery status stay visible.
 
@@ -101,6 +101,7 @@ Start with the default Medium bowler. For repeatable deliveries, disable random 
 - A 0.156 kg, 0.072 m diameter ball with gravity, quadratic air drag, a bounded 2D Magnus approximation and spin decay. Deliveries start without spin; impacts create spin.
 - RK4 flight integration at a fixed 120 Hz with eight substeps per tick. Ground contact time is solved within the substep.
 - Pitch restitution, Coulomb friction, ball angular inertia, slipping-to-rolling transition and rolling resistance. Passive ground contact dissipates energy.
+- Prepared-pitch bounce is calibrated against match oblique impacts; [bowling research and comparison data](docs/BOWLING_BOUNCE.md) explain the effects of length, release height and speed.
 - Swept ball-versus-moving-capsule contact detection for the bat. Impulses depend on the bat contact-point velocity, finite effective mass, rotational lever arm and friction.
 - Bat and wicket contacts; an always-visible, invulnerable batter; a trajectory trail and persistent per-delivery speed, distance and height maxima.
 - Blender-built skinned cricketer with separate grips, direct clock-angle modes, proportional trigger footwork, planted toe pivots, pelvis/spine/chest/head articulation and fixed-length limb IK. The same physical bat transform drives rendering and collisions.

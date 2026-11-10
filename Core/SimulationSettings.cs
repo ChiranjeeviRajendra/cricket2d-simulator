@@ -24,9 +24,11 @@ public sealed record SimulationSettings
     public double DragCoefficient { get; init; } = 0.47;
     public double MagnusCoefficient { get; init; } = 0.12;
     public double SpinDecay { get; init; } = 0.025;
-    // Prepared turf strip: leather-ball drop tests, not the ball's steel-plate restitution.
-    public double GroundRestitution { get; init; } = 0.43;
-    public double GroundFriction { get; init; } = 0.22;
+    // Effective prepared-pitch calibration from match oblique impacts (James et al., 2004).
+    // At 36 m/s and 12.5 degrees: ~89% speed retained, ~65% rebound/incident angle.
+    // These are fitted coefficients, not vertical-drop or steel-plate measurements.
+    public double GroundRestitution { get; init; } = 0.58;
+    public double GroundFriction { get; init; } = 0.28;
     public double RollingResistance { get; init; } = 0.025;
     // Grass outfield: effective values calibrated against the AFL/CA turf reference tests.
     public double OutfieldRestitution { get; init; } = 0.30;

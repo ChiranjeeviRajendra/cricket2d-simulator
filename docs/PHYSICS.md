@@ -15,7 +15,7 @@ Bowler profiles and seeded sampling live in `Core/Practice/PracticeBowling.cs`. 
 | Stump radius in side-view contact model | 0.019 m |
 | Popping crease distance from wicket | 1.2192 m |
 | Bowler release x | 1.2192 m |
-| Bowler release height limits | 1.53–2.16 m inclusive (153–216 cm) |
+| Bowler release height limits | 1.53–2.40 m inclusive (153–240 cm) |
 | Ball radius | 0.036 m |
 | Bat total length from grip | 0.85 m |
 | Handle before blade starts | 0.28 m |
@@ -45,8 +45,8 @@ References: [MCC pitch](https://www.lords.org/mcc/the-laws/the-pitch), [MCC crea
 | `DragCoefficient` | 0.47 | dimensionless constant; not seam-calibrated |
 | `MagnusCoefficient` | 0.12 | dimensionless spin-ratio gain; lift capped at ±0.3 |
 | `SpinDecay` | 0.025 | 1/s |
-| `GroundRestitution` | 0.43 | prepared strip normal rebound / incident speed |
-| `GroundFriction` | 0.22 | prepared strip Coulomb coefficient |
+| `GroundRestitution` | 0.58 | effective prepared strip normal rebound / incident speed |
+| `GroundFriction` | 0.28 | effective prepared strip Coulomb coefficient |
 | `RollingResistance` | 0.025 | prepared strip rolling deceleration / gravity |
 | `OutfieldRestitution` | 0.30 | outfield normal rebound / incident speed |
 | `OutfieldFriction` | 0.35 | outfield Coulomb coefficient |
@@ -84,6 +84,6 @@ The executable tests use analytical vacuum flight and a separate, finer-step lan
 
 Tests also verify energy loss with random oblique impacts and initial spin, sliding and rolling, contact-point bat impulses, swept impacts that cross the entire blade in one tick, retained segment lengths, repeatable input sequences, and render-frequency independence.
 
-The November 2026 surface correction adds reference checks described in [CRICKET_REFERENCES.md](CRICKET_REFERENCES.md#ball-bounce-and-outfield-roll). In controlled simulations with the default atmosphere, a 2 m drop now rebounds 0.363 m on the strip and 0.177 m on the outfield (previously 0.659 m on both). An ideal solid-sphere ramp exit from 1 m, `v = sqrt(10gh/7)`, now rolls 9.07 m in 4.93 s on the outfield, versus 24.92 m in 13.94 s previously. This entrance-speed approximation neglects ramp and ramp-to-ground losses. A 75 km/h, 15-degree outfield impact retains 57.1% of horizontal speed, versus 90.7% previously. These are model measurements against selected reference envelopes, not measurements on a particular real ground.
+The November 2026 surface checks are described in [CRICKET_REFERENCES.md](CRICKET_REFERENCES.md#ball-bounce-and-outfield-roll). The subsequent [bowling calibration](BOWLING_BOUNCE.md) uses match oblique impacts for the strip: the 36 m/s, 12.5° reference retains 88.94% of total speed and 64.91% of incident angle. A 2 m drop with the default atmosphere now rebounds 0.659 m on the strip (0.363 m with the earlier 0.43 setting) and 0.177 m on the outfield. The strip drop is a model prediction, not a fitted drop measurement. An ideal solid-sphere ramp exit from 1 m, `v = sqrt(10gh/7)`, rolls 9.07 m in 4.93 s on the outfield. This entrance-speed approximation neglects ramp and ramp-to-ground losses. A 75 km/h, 15-degree outfield impact retains 57.1% of horizontal speed. These are model measurements, not measurements on a particular real ground.
 
 Regression checks also cover both pitch edges against an independent work/energy solution, 3,000 impacts with varying initial spin followed by supported contact, grazing impacts, custom/invalid settings, and a stopped ball in the live simulation. Natural turf varies with moisture, compaction, wear, ball construction and impact speed. The model still uses effective constant restitution and friction per material; it does not resolve cracks, individual seam strikes, soil deformation, lateral seam movement or ball ageing. Matching one drop and roll test does not validate every delivery or surface.
