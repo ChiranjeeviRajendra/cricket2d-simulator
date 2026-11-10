@@ -89,7 +89,6 @@ public sealed class Simulation
         // Spread its pose change across those substeps so velocity is delta / Tick, not delta / (Tick / 8).
         Batter.Step(input, SimulationSettings.Tick, Settings);
         PreviousFrame=Batter.MotionFromFrame;
-        if(Batter.BeganStroke) PreviousPose=BattingRig.BuildPose(PreviousFrame,Batting,Settings);
         // Free rehearsal before bowling still accepts batting input; no ball/time/statistics advance.
         if (Phase == DeliveryPhase.Setup) return;
         double dt = SimulationSettings.Tick / Settings.Substeps;

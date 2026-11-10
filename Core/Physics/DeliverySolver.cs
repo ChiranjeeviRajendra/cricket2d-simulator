@@ -3,7 +3,8 @@ namespace Cricket.Physics;
 public readonly record struct DeliverySettings(double Speed, double PitchingLength, double ReleaseHeight)
 {
     public const double MinReleaseHeight = 1.53;
-    public const double MaxReleaseHeight = 2.16;
+    // Elite release positions up to 2.38 m were measured by Cork et al. (2013).
+    public const double MaxReleaseHeight = 2.40;
     public const double MinSpeed = 5;
     public const double MaxSpeed = 50;
     public const double MinPitchingLength = 8;

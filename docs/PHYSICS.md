@@ -1,6 +1,6 @@
 # Physics assumptions and units
 
-All core distances are metres, time is seconds, mass is kilograms, velocity is m/s, angular velocity is rad/s, forces are newtons and impulse is N·s. The world origin is the bowler-end wicket at pitch level. The drawing layer starts at approximately 63.22 pixels per metre and automatically reduces the scale to keep the ball and wickets visible. It flips both axes: the bowler is on the right, the batter on the left, and positive height points upward. Visual stump offsets show the three overlapping stumps in a side projection; physics uses one stump capsule at the wicket line. Camera zoom never changes physical quantities.
+All core distances are metres, time is seconds, mass is kilograms, velocity is m/s, angular velocity is rad/s, forces are newtons and impulse is N·s. The world origin is the bowler-end wicket at pitch level. The drawing layer starts at approximately 69.18 pixels per metre and automatically reduces the scale to keep the ball and wickets visible. It flips both axes: the bowler is on the right, the batter on the left, and positive height points upward. Visual stump offsets show the three overlapping stumps in a side projection; physics uses one stump capsule at the wicket line. Camera zoom never changes physical quantities.
 
 The setup panel and speed stats display **km/h**. Input is divided by 3.6 before entering the simulation; output is multiplied by 3.6 for display. Practice defaults to a Medium bowler with randomized speed (80.1–110 km/h) and length (8–25 m), at a manually set 2.15 m height. The remembered manual speed is 95 km/h. The supported manual range remains 18–180 km/h, equivalent to 5–50 m/s. Tests and diagnostics may use a fixed 115.2 km/h (32 m/s) fixture.
 
@@ -15,7 +15,7 @@ Bowler profiles and seeded sampling live in `Core/Practice/PracticeBowling.cs`. 
 | Stump radius in side-view contact model | 0.019 m |
 | Popping crease distance from wicket | 1.2192 m |
 | Bowler release x | 1.2192 m |
-| Bowler release height limits | 1.53–2.16 m inclusive (153–216 cm) |
+| Bowler release height limits | 1.53–2.40 m inclusive (153–240 cm) |
 | Ball radius | 0.036 m |
 | Bat total length from grip | 0.85 m |
 | Handle before blade starts | 0.28 m |
@@ -45,9 +45,13 @@ References: [MCC pitch](https://www.lords.org/mcc/the-laws/the-pitch), [MCC crea
 | `DragCoefficient` | 0.47 | dimensionless constant; not seam-calibrated |
 | `MagnusCoefficient` | 0.12 | dimensionless spin-ratio gain; lift capped at ±0.3 |
 | `SpinDecay` | 0.025 | 1/s |
-| `GroundRestitution` | 0.58 | dimensionless |
-| `GroundFriction` | 0.22 | dimensionless Coulomb coefficient |
-| `RollingResistance` | 0.025 | dimensionless deceleration coefficient |
+| `GroundRestitution` | 0.58 | effective prepared strip normal rebound / incident speed |
+| `GroundFriction` | 0.28 | effective prepared strip Coulomb coefficient |
+| `RollingResistance` | 0.025 | prepared strip rolling deceleration / gravity |
+| `OutfieldRestitution` | 0.30 | outfield normal rebound / incident speed |
+| `OutfieldFriction` | 0.35 | outfield Coulomb coefficient |
+| `OutfieldRollingResistance` | 0.075 | outfield rolling deceleration / gravity |
+| `OutfieldTangentialRetention` | 0.65 | additional tangential speed/spin retention at a substantial outfield impact |
 | `BatMass` | 1.17 | kg; published sample mean |
 | `BatCentreOfMassFromGrip` | 0.40 | m along the bat from the grip |
 | `BatInertiaAboutGrip` | 0.2459 | kg·m²; converted to the assumed grip axis |
@@ -66,7 +70,11 @@ Gravity is constant. Drag is `-0.5 ρ Cd A |v| v`, divided by mass for accelerat
 
 ## Ground and bat
 
-Ground normal impulse uses restitution. Tangential impulse removes contact slip `vx + ωr` subject to the Coulomb limit. The ball uses solid-sphere inertia `0.4mr²`. Below the small vertical settling threshold, the supported-contact model continues to remove slip through friction before enforcing pure rolling. Rolling resistance slows a rolling ball to rest without changing its direction or introducing energy.
+`GroundSurface.At` chooses the prepared strip between x = −0.30 m and x = 20.42 m, matching the visible strip's extension beyond both wickets. Ground outside that interval uses the outfield coefficients. This is the game's 2D contact plane; no pitch-width collision axis is implied. Surface selection is a value-type lookup with no allocations, and rolling uses the material at the start of each physics substep.
+
+Ground normal impulse uses the selected restitution. Tangential impulse removes contact slip `vx + ωr` subject to the selected Coulomb limit. The ball uses solid-sphere inertia `0.4mr²`. The outfield additionally damps horizontal velocity and spin together after friction to represent energy absorbed by grass and soil deformation. A rigid sphere with contact-point friction alone cannot capture this loss. The multiplier is `1 − (1 − OutfieldTangentialRetention) × min(1, |incoming vy| / 5)`. The 5 m/s scale approximates the normal speed of the reference angled impact. This is an explicit effective calibration, not a simulated deforming grass/soil bed; it fades to unity at grazing incidence so tiny hops do not abruptly stop the ball. A multiplier in [0, 1] cannot add kinetic energy and scaling both quantities preserves any no-slip state established by the impulse. The prepared strip has no additional tangential damping.
+
+Below the existing small vertical settling threshold, supported contact continues to remove slip through friction before enforcing pure rolling. Rolling resistance slows pure rolling to rest without reversal or residual spin. Defaults give nominal decelerations of 0.245 m/s² on the strip and 0.735 m/s² on the outfield, plus air drag. All coefficients remain editable in `Config/physics.json`. Walls and terraces keep their existing inheritance from the strip coefficients; boundary cushions retain their independent response.
 
 Bat contact velocity uses `v_contact = v_grip + ω_bat × r_from_grip`. The impulse uses the **centre-of-mass** lever and inertia: `I_com = I_grip - M d²`, which is 0.0587 kg·m² for the defaults. Its denominator includes inverse ball mass, inverse bat mass, and the squared normal COM lever divided by COM inertia. Tangential slip includes the rotation caused by the normal impulse before applying friction; the tangential impulse also changes ball spin. The bat remains animation-driven, so its recoil is not fed back into the arms. Wicket restitution is a simplified passive response in `Simulation`. The visible batter is permanently invulnerable, so body, pad and helmet overlap does not affect the ball's position, velocity or spin.
 
@@ -74,4 +82,8 @@ Bat contact velocity uses `v_contact = v_grip + ω_bat × r_from_grip`. The impu
 
 The executable tests use analytical vacuum flight and a separate, finer-step landing integration as independent reference checks. Requested launch combinations must land within 0.002 m in the independent test; live delivery checks allow 0.003 m. These are numerical tolerances, **not claims of real-world predictive accuracy**.
 
-Tests also verify energy loss with random oblique impacts and initial spin, sliding and rolling, contact-point bat impulses, swept impacts that cross the entire blade in one tick, retained segment lengths, repeatable input sequences, and render-frequency independence. Realistic tuning still requires observed incoming speeds, pitch contact positions, rebound velocities and bat motion from measured footage.
+Tests also verify energy loss with random oblique impacts and initial spin, sliding and rolling, contact-point bat impulses, swept impacts that cross the entire blade in one tick, retained segment lengths, repeatable input sequences, and render-frequency independence.
+
+The November 2026 surface checks are described in [CRICKET_REFERENCES.md](CRICKET_REFERENCES.md#ball-bounce-and-outfield-roll). The subsequent [bowling calibration](BOWLING_BOUNCE.md) uses match oblique impacts for the strip: the 36 m/s, 12.5° reference retains 88.94% of total speed and 64.91% of incident angle. A 2 m drop with the default atmosphere now rebounds 0.659 m on the strip (0.363 m with the earlier 0.43 setting) and 0.177 m on the outfield. The strip drop is a model prediction, not a fitted drop measurement. An ideal solid-sphere ramp exit from 1 m, `v = sqrt(10gh/7)`, rolls 9.07 m in 4.93 s on the outfield. This entrance-speed approximation neglects ramp and ramp-to-ground losses. A 75 km/h, 15-degree outfield impact retains 57.1% of horizontal speed. These are model measurements, not measurements on a particular real ground.
+
+Regression checks also cover both pitch edges against an independent work/energy solution, 3,000 impacts with varying initial spin followed by supported contact, grazing impacts, custom/invalid settings, and a stopped ball in the live simulation. Natural turf varies with moisture, compaction, wear, ball construction and impact speed. The model still uses effective constant restitution and friction per material; it does not resolve cracks, individual seam strikes, soil deformation, lateral seam movement or ball ageing. Matching one drop and roll test does not validate every delivery or surface.

@@ -12,5 +12,6 @@
     <None Include="../Config/batsman.json" Link="Config/batsman.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Config/field.json" Link="Config/field.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="../Config/audio.json" Link="Config/audio.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="../Config/physics.json" Link="Config/physics.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

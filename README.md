@@ -4,7 +4,7 @@ A native Godot 4.7.2 .NET / C# cricket practice game. Configure a delivery, cont
 
 ## Play on this PC
 
-Double-click **`Play.cmd`**. It finds Godot .NET in your Downloads folder, builds the C# projects using the packages bundled with Godot, and launches the game. Godot 4.7.2 .NET and .NET SDK 10 are already installed; **no additional application is needed**.
+Double-click **`Play.cmd`**. It finds Godot .NET in your Downloads folder, builds the C# projects using the packages bundled with Godot, and launches the game in fullscreen without a window frame or title bar. **F11** toggles fullscreen/windowed mode. Godot 4.7.2 .NET and .NET SDK 10 are already installed; **no additional application is needed**.
 
 Alternatively, open `project.godot` in the Godot **.NET** editor, build, and press **F6/F5**. Run `Play.cmd` once before the first editor build to copy Godot's local dependency packages.
 
@@ -42,7 +42,7 @@ Choose a bowler at the top of the popup. **Medium** is selected initially, with 
 | --- | --- | --- |
 | Release speed | Magnitude of velocity when the ball leaves the hand | 18–180 km/h |
 | Pitching length | First ground contact, measured **from the bowler-end wicket** toward the striker | 8–25 m |
-| Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.16 m (153–216 cm) |
+| Release height | Height of the **ball centre** above the pitch; not the bowler's body height | 1.53–2.40 m (153–240 cm) |
 
 Settings retain their unnumbered boxes and live value badges. The pitch diagram uses one 0–25 m scale: the bowler's stumps are at 0 m on the right, the batter's stumps at 20.12 m, and the left limit extends 4.88 m beyond them. The selectable range remains 8–25 m; the 0–8 m section is shown in grey for scale. Left moves the pitch slider farther from the bowler; right moves it closer. Speed and height increase to the right. Use mouse drag, arrows or D-pad. Up/down and Tab/Shift+Tab navigate visible controls; hidden sliders are skipped. The body scrolls when expanded, while the primary button and delivery status stay visible.
 
@@ -55,6 +55,8 @@ The bowler calculates a launch angle using the same aerodynamic integrator as th
 The release is at x = 1.2192 m, on the bowler's popping crease. The length setting still uses x = 0 at the wicket, so a length of 16 m means 14.7808 m horizontally from release. Both wickets remain visible, **exactly 20.12 m apart**. The **batter is on the left** and the **bowler is on the right** in the initial view.
 
 The batter is always visible and permanently invulnerable to the ball. The ball passes through his body, pads and helmet without a collision response. **The bat and wickets remain collidable.**
+
+The prepared pitch and grass outfield now have separate ball responses. Outfield impacts lose more bounce and forward speed, and rolling balls slow and stop sooner on grass. Tune the strip and `Outfield*` coefficients in `Config/physics.json`; [the physics notes](docs/PHYSICS.md) describe the reference tests, measured results and limits of this 2D model.
 
 Bat contacts now use the supplied **perfect-shot** or **imperfect-shot** recording based on contact position and face alignment; wicket hits use the supplied **wicket** sound. Quieter impacts play more softly. Add sample variations and tune selection/volume in `Config/audio.json`; see [AUDIO.md](docs/AUDIO.md) for extending the sound library.
 
@@ -74,7 +76,7 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 | --- | --- | --- |
 | Swing | Rotate left stick counterclockwise: 8:30 → 6 → 3 → 12 | Overlapping WASD directions |
 | X: stop at 2; vertical bat face | Hold X at any point | J |
-| A: aligned arm/blade, 8:30 to 12 (default) | No button or hold A | No modifier or K |
+| A: aligned arm/blade, 8:30 to 12 (initial default) | A | K |
 | B: arms stop at 1:30; blade points at 4 | Hold B at any point | L |
 | Y: follows A to 2, then blade turns toward 3 as arms reach 12 | Hold Y at any point | I |
 | Front / back weight | R2 / L2, progressive | E / Q |
@@ -87,9 +89,9 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 | Main menu during play | Start → Main Menu | Escape → Main Menu |
 | Toggle ball trail / full screen | — | T / F11 |
 
-Start the stick beyond 60% radius near 8:30, then rotate through 6 and 3. A direct push, centre crossing or small movement cannot start a swing. After the initial 6° gate, the arm clock matches the stick on the current physics tick with no animation easing or speed limiter. Holding stops immediately; reversing reverses the stroke. Centre the stick to recover toward 8:30. A fresh deliberate rotation can interrupt that recovery immediately; an off-angle push no longer blocks later entry into the start area. Consecutive full rotations also start consecutive strokes without requiring a centre release. Change the held mode button before, during or after the swing; it applies at the current stick position without re-arming. Releasing modifiers returns to A. Free swings also work before bowling, while the delivery panel is closed. No button is A.
+Start the stick beyond 60% radius near 8:30, then rotate through 6 and 3. Deliberate rotation drives a bat-speed envelope from 50 to 136 km/h over 25 degrees. Releasing the stick or held shot button brakes within 10 degrees and holds the pose and selected mode. There is no automatic return to guard. Reversals, new arcs and live mode changes keep the physical bat within the speed limit. Free swings also work before bowling with the delivery panel closed; A is the initial mode.
 
-The right stick is inactive for now. R2 progressively shifts weight forward and lowers the rear knee; L2 moves support backward. Opposing trigger pressures cancel. See [the batting guide](docs/BATTING.md) for gesture tuning, preview controls and the Blender workflow.
+The right stick is inactive. Neutral starts at 35% forward transfer. R2/RT widens and lowers the forward stance; full L2/LT gives the tallest rear-supported stance. Equal trigger pressures cancel, and release restores baseline body weight. The bat can pass through the ground without a response. See [the batting guide](docs/BATTING.md) for settings, preview controls and the Blender workflow.
 
 Start with the default Medium bowler. For repeatable deliveries, disable random speed/length and use **95 km/h, 16 m, 2.15 m**. Controller events are covered by synthetic native checks; physical-controller feel still needs hands-on testing.
 
@@ -99,9 +101,10 @@ Start with the default Medium bowler. For repeatable deliveries, disable random 
 - A 0.156 kg, 0.072 m diameter ball with gravity, quadratic air drag, a bounded 2D Magnus approximation and spin decay. Deliveries start without spin; impacts create spin.
 - RK4 flight integration at a fixed 120 Hz with eight substeps per tick. Ground contact time is solved within the substep.
 - Pitch restitution, Coulomb friction, ball angular inertia, slipping-to-rolling transition and rolling resistance. Passive ground contact dissipates energy.
+- Prepared-pitch bounce is calibrated against match oblique impacts; [bowling research and comparison data](docs/BOWLING_BOUNCE.md) explain the effects of length, release height and speed.
 - Swept ball-versus-moving-capsule contact detection for the bat. Impulses depend on the bat contact-point velocity, finite effective mass, rotational lever arm and friction.
 - Bat and wicket contacts; an always-visible, invulnerable batter; a trajectory trail and persistent per-delivery speed, distance and height maxima.
-- Blender-built skinned cricketer with separate grips, direct clock-angle modes, proportional trigger footwork, planted toe pivots, pelvis/spine/chest/head articulation and fixed-length limb IK. The same physical bat transform drives rendering and collisions.
+- Blender-built skinned cricketer with separate grips, speed-limited clock-angle modes, proportional trigger footwork, planted toe pivots, pelvis/spine/chest/head articulation and fixed-length limb IK. The same physical bat transform drives rendering and collisions.
 - Procedural field presentation with a configurable oval wedge, inner and outer barricades, stepped stadium seating, a static spectator crowd and an Inkscape daylight sky. Physical objects retain a shared metre scale; scenery depth uses perspective that matches the ball plane at each boundary crossing. Five compact stats and a minimum drawn ball radius keep gameplay readable during camera zoom.
 
 Tune the batsman in [`Config/batsman.json`](Config/batsman.json): `Input`, `Swing` and `Body` configure controls and motion. Edit and reload in the batting lab. [`docs/BATTING.md`](docs/BATTING.md) explains the settings, biomechanics sources, limitations and Blender workflow. Open `Art/Batsman/batsman.blend` to inspect the model and seven editable sample actions.

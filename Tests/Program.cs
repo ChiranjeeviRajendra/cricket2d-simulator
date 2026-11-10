@@ -8,6 +8,15 @@ var tests = new (string Name, Action Run)[]
     ("Quadratic drag slows horizontal flight", Drag),
     ("1,000 oblique bounces dissipate energy including spin", BounceEnergy),
     ("Sliding ball loses energy before transitioning to rolling", GroundMotion),
+    ("Configured pitch drops and outfield bounce remain consistent", BallSurfaceChecks.TurfBounce),
+    ("Prepared-pitch rebound matches measured seam-delivery pace and angle", DeliveryBounceChecks.MatchReference),
+    ("Release height, speed and length produce physical bounce trends", DeliveryBounceChecks.DeliveryTrends),
+    ("Live delivery bounce agrees across physics substeps", DeliveryBounceChecks.LiveBounce),
+    ("Outfield rolling stops within the reference ramp-test range", BallSurfaceChecks.OutfieldRoll),
+    ("Grass absorbs horizontal speed in an oblique impact", BallSurfaceChecks.AngledOutfieldBounce),
+    ("Rolling across pitch edges agrees with independent work/energy predictions", BallSurfaceChecks.SurfaceTransitions),
+    ("Pitch/outfield impacts and spinning contact cannot create energy", BallSurfaceChecks.PassiveContact),
+    ("Live outfield balls settle and surface coefficients remain configurable", BallSurfaceChecks.LiveRollAndSettings),
     ("Stationary bat is passive; moving bat transfers momentum", BatImpulse),
     ("Swept collision catches a 50 m/s ball and a moving bat", SweptContact),
     ("Delivery solver hits requested first-pitch locations", Deliveries),
@@ -21,17 +30,19 @@ var tests = new (string Name, Action Run)[]
     ("Ball passes through the visible batter; wicket stays collidable", InvulnerableBatter),
     ("Only deliberate rotation advances the swing; pushes and jitter do not", BattingChecks.Controls),
     ("Right stick is disabled for batting", BattingChecks.RightStickDisabled),
-    ("New deliberate rotations cannot be locked out by rejection or recovery", BattingChecks.Reengagement),
+    ("Bat speed ramps to 136 km/h and releases brake within ten degrees", SwingDynamicsChecks.SpeedAndBrake),
+    ("Default weight, tall back-foot stance and ground-transparent blade", SwingDynamicsChecks.StanceAndGround),
+    ("New deliberate rotations re-engage without teleporting the held bat", BattingChecks.Reengagement),
     ("Four held shot modifiers produce distinct constrained finishes", BattingChecks.Shots),
     ("Shot modes change before, during and after a stroke without re-arming", BattingChecks.LiveModes),
     ("Y follows A to 2, then turns its blade to 3 as arms reach 12", BattingChecks.HighFinish),
     ("Progressive trigger transfer, rear-knee lowering and opposing inputs", BattingChecks.WeightTransfer),
-    ("Anatomical reach, pitch clearance and continuous randomized movement", BattingChecks.Anatomy),
+    ("Anatomical reach and continuous randomized movement", BattingChecks.Anatomy),
     ("Large radial deadzone and rotation threshold reject slight movement", BattingChecks.DeadZones),
     ("Bat orientation changes launch through collision physics", BattingChecks.PhysicsResponse),
     ("Bat inertia, isolated momentum and impact energy remain physical", BattingChecks.CricketPhysics),
     ("Batsman configuration survives delivery resets", BattingChecks.Configuration),
-    ("Supported tuning extremes preserve limbs and blade clearance", BattingChecks.TuningEnvelope),
+    ("Supported tuning extremes preserve limbs", BattingChecks.TuningEnvelope),
     ("Invalid and obsolete batsman settings are rejected", BattingChecks.InvalidConfiguration),
     ("Repeated inputs reproduce the same state", Determinism),
     ("Foot contacts stay planted and one foot always supports the body", AnimationChecks.Footwork),
@@ -179,7 +190,7 @@ static void Deliveries()
     var s = new SimulationSettings();
     foreach (double speed in new[] { 25.0, 32.0, 40.0, 50.0 })
     foreach (double length in new[] { 8.0, 10.0, 16.0, 25.0 })
-    foreach (double height in new[] { 1.53, 2.0, 2.16 })
+    foreach (double height in new[] { 1.53, 2.0, 2.16, 2.38, 2.40 })
     {
         var request = new DeliverySettings(speed, length, height);
         Check(DeliverySolver.TrySolve(request, s, out var plan, out string error), error);
@@ -216,14 +227,14 @@ static void DeliveryBounds()
 {
     var s = new SimulationSettings();
     Near(20.12, PitchDimensions.WicketSeparation, 0, "wicket separation");
-    foreach (double height in new[] { 1.53, 2.16 })
+    foreach (double height in new[] { 1.53, 2.16, 2.40 })
     foreach (double length in new[] { 8.0, 20.12, 25.0 })
     {
         Check(DeliverySolver.TrySolve(new(32, length, height), s, out var plan, out string error), error);
         Near(height, plan!.Release.Position.Y, 0, "release endpoint");
         Near(length, plan.PredictedPitchX, .002, "pitching length");
     }
-    foreach (double height in new[] { 1.52999, 2.16001, double.NaN, double.PositiveInfinity })
+    foreach (double height in new[] { 1.52999, 2.40001, double.NaN, double.PositiveInfinity })
         Check(!DeliverySolver.TrySolve(new(32, 16, height), s, out _, out _), "Out-of-range release height accepted.");
     foreach (double length in new[] { 7.99999, 25.00001, double.NaN, double.PositiveInfinity })
         Check(!DeliverySolver.TrySolve(new(32, length, 2), s, out _, out _), "Out-of-range pitching length accepted.");

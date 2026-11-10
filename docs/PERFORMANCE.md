@@ -287,3 +287,24 @@ The current `artifacts/performance-batsman-uncapped.json` records ExportRelease 
 Every sampling window recorded zero managed collections. Live batting allocated 258 bytes per rendered frame including diagnostics; physics p95 was 1.840 ms. Native resource count remained 27 across all scenarios, and working set ranged 265.4–302.1 MiB. Live/camera averages are close to the prior short run; these samples do not establish an isolated performance improvement or sustained 4K/120 performance. This was not a packaged export or prolonged memory test.
 
 Validation: Debug and ExportRelease builds completed with zero warnings/errors; 56/56 Release core checks passed. Godot input smoke checks covered first/next delivery, repeated requests, cancellation on pause, invalid preparation, frozen ball/statistics, pause focus recovery, settings persistence until leaving practice, default restoration and blocked stick navigation in menus/sliders/native dropdowns. Rendered pause/menu settings captures were inspected. Controller events were injected; no physical controller was connected.
+
+## Ball bounce and outfield rolling — 2026-11-09
+
+Ground contact now selects prepared-strip or outfield coefficients using the same pitch edges as the renderer. Outfield impacts include an effective deformation loss; rolling resistance is stronger on grass. The lookup returns a value type and adds no per-contact allocation, scene query or resource load. Fixed physics remains 120 Hz with eight contact substeps, and normal presentation settings are unchanged. [PHYSICS.md](PHYSICS.md) records the model, reference results and limitations.
+
+Before/after reports are preserved as `artifacts/performance-ball-physics-before.json` and `artifacts/performance-ball-physics-after.json`, with corresponding logs. Both used ExportRelease assemblies in the local Godot 4.7.2 .NET runner, Ryzen 7 7800X3D / RTX 4080 SUPER, NVIDIA 610.88, GL Compatibility, verified 3840 × 2160 target, engine cap zero and VSync disabled only for this diagnostic. Each scenario used two seconds of warm-up and three seconds of sampling, one cycle. Both runs completed without logged runtime errors.
+
+| Scenario | Before FPS | After FPS | Before 1% low | After 1% low | Before p99 ms | After p99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Ready | 2103.30 | 2176.02 | 1333.96 | 1426.11 | 0.690 | 0.637 |
+| Live batting | 490.39 | 484.46 | 297.67 | 289.44 | 2.447 | 2.620 |
+| Wide view | 945.93 | 969.59 | 654.09 | 686.14 | 1.456 | 1.372 |
+| Moving camera | 367.87 | 366.11 | 296.21 | 299.40 | 3.228 | 3.202 |
+| Settings drag | 1231.52 | 1257.80 | 800.92 | 838.84 | 1.129 | 1.096 |
+| Delivery resets | 1418.82 | 1431.42 | 843.83 | 873.88 | 0.940 | 0.908 |
+| Main menu | 3442.70 | 3562.19 | 2293.19 | 2251.98 | 0.402 | 0.415 |
+| Random practice | 1748.45 | 1789.31 | 1044.40 | 1084.10 | 0.782 | 0.762 |
+
+Live batting averaged 1.2% lower FPS; camera motion averaged 0.5% lower. Live physics p95 was 1.756 ms versus 1.761 ms before. These short runs do not establish a statistically significant improvement or regression, and altered trajectories affect the animated workload. Every sampling window recorded zero managed collections. After-change live/camera allocations were 248/231 bytes per rendered frame including diagnostics; native resource count stayed at 27 and working set ranged 268.7–306.3 MiB. GPU execution time, prolonged stability and packaged-export performance were not separately measured. These results do not establish sustained 4K/120 performance.
+
+Validation: 62/62 Release checks passed; Debug and ExportRelease builds completed without warnings/errors, and all Godot gameplay smoke groups passed. The three initial reference checks failed on the old model, reproducing excessive drop rebound, outfield rolling distance and angled-impact speed retention. Added coverage includes both surface transitions, 3,000 spinning impacts followed by supported contact, passive energy loss, grazing contacts, configurable coefficients and stable rest in the live simulation. Existing swept collisions, render-rate independence, allocation and animation-preview playback checks also passed. Controller events were injected; no physical controller was connected.

@@ -1,57 +1,59 @@
 # Batsman controls, anatomy and Blender workflow
 
-The batsman is a skinned 3D character composited into the existing 2D pitch. Ball flight and bat contacts still run in the engine-independent fixed-step physics core. A single physical bat transform drives both collision detection and the rendered bat.
+The batsman is a skinned 3D character composited into the 2D pitch. Ball flight and bat contacts run in the fixed-step physics core. One authoritative bat transform drives collision detection and the rendered bat.
 
 ## Controls
 
-Clock positions describe the **top-hand arm direction from its shoulder**, viewed on screen. The bowler is to the right. Every mode starts at 8:30 and travels counterclockwise through 6 and 3.
+Clock positions describe the top-hand arm direction from its shoulder, viewed on screen with the bowler to the right. Move the left stick outward near 8:30 and rotate counterclockwise through 6 and 3 toward 12. The initial gate requires 60% radius and 6 degrees of deliberate rotation; radial pushes, centre crossings and small jitter cannot launch a stroke. Below 45% radius the stick is released.
 
-| Mode | Input | Arm stop | Blade behaviour |
+| Mode | Input | Arm stop | Blade behavior |
 | --- | --- | --- | --- |
-| A (default) | No button, or A / K | 12 | Blade remains aligned with the arm ray throughout the 255° arc |
-| X | Hold X / J | 2 | Flat face starts toward the ground, turns toward the bowler, and finishes as a vertical wall |
-| B | Hold B / L | 1:30 | Face rotates forward; blade finishes pointing at 4 o'clock |
-| Y | Hold Y / I | 12 | Same as A through 2; then the blade turns from 2 toward 3 as the arms continue to 12, ending horizontal with its face toward the sky |
+| A, initial default | A / K, or no button before selecting another mode | 12 | Blade aligned with the arm |
+| X | X / J | 2 | Finishes as a vertical wall |
+| B | B / L | 1:30 | Blade finishes pointing at 4 |
+| Y | Y / I | 12 | Follows A to 2, then turns toward 3 as the arms continue to 12 |
 
-R2/L2 transfer weight forward/back progressively (E/Q on keyboard). D-pad Up bowls the first or next ball. Menu/Start opens the pause menu with Resume, Settings and Main Menu; Settings edits practice options while the current ball stays frozen. View/Select still opens explicit delivery setup. Space or Escape opens pause during play, Enter opens setup, and keyboard Up requests the next ball. A/B retain confirm/back roles inside menus. Only the D-pad navigates controller UI; sticks control gameplay. Leaving practice through Main Menu or exiting the game discards practice overrides.
+The selected mode persists on button release. Releasing the stick **or** the held shot button brakes the swing, then holds its resulting pose; there is no automatic return to guard or to A. A new deliberate arc re-engages from the actual held pose without teleporting. Returning toward the beginning of the stroke also obeys the speed limit. Buttons may change modes during a stroke, but the blade moves continuously into the new orientation. Right-stick batting remains disabled.
 
-**To swing:** move the left stick outward near 8:30, then rotate **8:30 → 6 → 3 → 12**. Mode buttons work before, during and after the swing, including while holding the stick still or recovering. The currently held button applies on the next physics tick without re-arming; releasing all modifiers returns to A. Switching away from X/B restores the current stick angle beyond their stops. Simultaneous modifiers use priority X, B, Y, A. No button is exactly A; there is no fifth “natural” mode. Right-stick batting remains disabled.
+R2/RT (E) increases forward transfer from the default 35% stance to full forward transfer. L2/LT (Q) moves toward rear-leg support and the tallest stance. Equal trigger pressures cancel to the default stance. Trigger release returns body weight to that baseline; swing angle and shot mode remain held. Feet lift before stepping and remain planted while supporting weight.
 
-Y keeps the blade aligned with A until the arms reach 2. Over the final arm arc the mapping is linear: **arms 2 / 1 / 12 → blade 2 / 2:30 / 3**. Reversing the stick retraces this curve; there is no timed blade animation.
+D-pad Up / keyboard Up bowls. Menu/Start, Space or Escape pauses; View/Select or Enter opens delivery setup. Menus retain A/confirm and B/back. Free swings work before bowling while the delivery panel is closed.
 
-The stick must reach 60% radius within ±15° of 8:30 and pass a 6° initial rotation gate. Direct pushes, small radial movements, centre crossings and discontinuous direction jumps cannot launch a stroke. The initial gate rejects jitter; **after activation, the actual angle is used without subtracting the gate**, so the stick and arm clocks agree. An off-angle push remains inactive, but you can rotate back into the start area without centring first. Moving back toward 8:30 updates the activation anchor so an older angle cannot delay a later swing.
+## Swing speed and braking
 
-Active progress has no smoothing, acceleration ramp, speed cap or delayed animation target. Holding the stick stops immediately; reversing it reverses the stroke on the current fixed tick. X/B clamp at their stops without rescaling the preceding arc. Holding an endpoint cannot start another stroke. Continuing around the rim through the upper-left sector and back into 8:30 can start a new deliberate stroke; a centre release is not required between full rotations. Returning below 45% radius ends control and returns toward 8:30 at 240°/s. A fresh deliberate arc interrupts that return immediately; it no longer waits for recovery to finish. Release recovery is separate from active swing tracking. The upper-left sector outside the legal arc releases the old gesture instead of accumulating an extra revolution. When a new arc interrupts it, collision velocity is measured from the new arc's adjacent stick samples; the reset from the old recovery pose cannot create a false fast bat sweep.
+The requested maximum is interpreted as **bat-tip linear speed**, including grip motion: 136 km/h = 37.7778 m/s. The initial driving envelope is 50 km/h = 13.8889 m/s. Slower stick motion can request a slower actual swing; these limits do not force a minimum speed when positioning the bat.
 
-The current authoritative pose is rendered directly. This removes the former extra interpolation tick for the batsman. Input still passes through controller/OS polling, the fixed 120 Hz physics tick (up to 8.33 ms to the next tick), rendering and display presentation; this is not a claim of zero end-to-end latency. The ball retains its normal visual interpolation. In the main practice view, batting input works before bowling too; opening delivery settings suspends it so UI navigation cannot become a stroke.
+The drive uses actual angular travel along the arm swing, with an accelerating speed envelope:
 
-Trigger pressure remains dead-zone corrected and combined as **R2 − L2**. Equal pressure cancels. R2 advances the front foot and lowers the rear knee; L2 steps back with the rear foot before gathering the front foot and moving pelvis/head above rear-leg support. Start pauses simulation and audio; focus restoration does not clear a manual pause.
+```text
+v^2 = v_start^2 + (v_max^2 - v_start^2) * min(travel_degrees / 25, 1)
+```
 
-## Motion and constraints
+This corresponds to constant tangential acceleration for a fixed effective swing radius. Local tip travel per degree is measured from the constrained pose, so arm angular speed is not mistaken for bat speed. On release, braking uses the equivalent of stopping from maximum speed within 10 degrees; lower-speed releases stop sooner. Reversals brake through zero before moving in the other direction. A nearer target or stroke endpoint can stop the bat sooner.
 
-- `BattingStroke` maps the absolute arm clock to each mode's blade angle and coordinated torso rotation. No time-based clip controls swing progress.
-- The grip stays on the requested arm ray. Analytic reach limits keep both hands connected without stretching bones. Elbows may bend to accommodate the second hand or ground clearance, especially during deep front-foot weight transfer; perfectly locked elbows throughout every stance would force the bat through the pitch.
-- Separate pelvis, spine, chest, neck and head joints distribute body motion. `AthletePose` carries the same 3D grips/elbows used by rendering and physics.
-- Elbow guides and cached rest-roll offsets control arm skin orientation. Wrist skin follows the forearm; closed gloves follow the handle.
-- Feet lift before translating and plant at fixed toe anchors. Only one foot can be airborne. Hip reach stays within both planted legs' reach.
-- The physical blade angle and front-face normal also orient the mesh. Its edge is visible in side view when the flat face looks at the ground or sky.
-- Input advances once per 120 Hz tick. Collision substeps reconstruct intervening poses from that tick's endpoints, avoiding the former risk of applying a whole stick sample in only 1/960 s. Contact speed uses the actual grip/angle changes over elapsed simulation time.
-- A live mode change preserves the previous bat pose and interpolates its grip/angle across the full tick for collisions. The new mode is rendered immediately at the current stick position. This avoids multiplying a mode change's collision velocity by the substep count; mode changes remain direct controls rather than a physically simulated wrist transition.
-- Preview playback remains fixed-step and supports pause, slow motion, reverse demonstrations and single steps. It renders the current pose, without a separate trailing character pose.
+Both hand translation and blade rotation are checked against the speed ceiling, including shot-mode changes and re-arming. A bounded correction limits the next pose. Collision substeps interpolate the same accepted grip/angle endpoints; they do not receive an independent faster bat. The maximum velocity along that rigid-bat sweep is evaluated analytically, including its interior angular maximum.
 
-These are authored animation approximations with fixed-length IK. The character does not have a full-body self-collision or muscle-torque model. Direct input can request changes faster than an athlete would perform; large discontinuities are rejected, but accepted input is intentionally not acceleration-limited. Numerical limb checks do not establish photo-reference visual fidelity.
+Input and swing advance at 120 Hz, independent of rendered FPS. The collision path uses each tick's accepted motion, so a measured speed over the tick that crosses 25 degrees includes the earlier acceleration. In the regression fixture, 960 Hz sampling gives 51.85 km/h for the first moving interval, 135.40 km/h on crossing 25 degrees and a 135.99 km/h peak; at the production 120 Hz tick the interval measurements are 64.86, 122.67 and 135.34 km/h. Both stick and button releases stop in 10.000 degrees in this maximum-speed fixture. These are numerical measurements of the requested game-control profile, not measured athlete capabilities.
+
+## Stance, anatomy and ground
+
+Neutral starts already planted at 35% forward transfer. With corrected trigger difference d = R2 - L2, the weight parameter is 0.35 + 0.65d for d >= 0 and 0.35 + 1.35d for d < 0. Full front transfer uses a 0.60 m front-toe stride (previously 0.42 m) and lower pelvis. Full rear transfer raises the pelvis within leg reach. The measured default, full-front and full-back head-centre heights are 1.523, 1.230 and 1.640 m; full-front ankle spacing is approximately 1.032 m.
+
+The bat is transparent to the pitch. Its blade may pass below ground without a collision, rebound, sound or wrist retraction. Anatomical two-hand reach still limits the grip; legs and feet still respect the ground. This intentional bat/ground exception does not disable ball/pitch or ball/bat contacts.
+
+Separate pelvis, spine, chest, neck and head joints distribute body motion. Fixed-length IK maintains both hands on the handle, with one foot supported during stepping. Actual blade angle is included in the compact pose frame so partial mode transitions and held positions can be reconstructed. Rendered limbs use the same resolved bat as collisions. These remain authored motion approximations, without full-body self-collision or muscle-torque simulation.
 
 ## Editable settings
 
-Edit `Config/batsman.json`, then restart or choose **Reload JSON** in the batting lab. Invalid or obsolete properties are rejected and failed reloads retain the working rig.
+Edit Config/batsman.json, then restart or use Reload JSON in the batting lab. Invalid and obsolete properties are rejected.
 
-| Object | Settings and default |
+| Object | Defaults |
 | --- | --- |
-| `Input` | Release radius 0.45; engage radius 0.60; initial rotation 6°; start window ±15° around 8:30; maximum per-sample jump 65°; trigger deadzone 0.04 |
-| `Swing` | `RecoveryDegreesPerSecond`: 240, used only after stick release/cancellation |
-| `Body` | Grip spacing 0.105 m; transfer settling 0.28 s; step 0.24 s; front/rear toe strides 0.42/0.14 m; lift 0.055 m; rear heel 58° |
+| Input | Release radius 0.45; engage radius 0.60; rotation gate 6 degrees; start window +/-15 degrees; maximum sample jump 65 degrees; trigger deadzone 0.04 |
+| Swing | StartSpeedKph 50; MaxSpeedKph 136; AccelerationDegrees 25; BrakingDegrees 10 |
+| Body | DefaultForwardWeight 0.35; FrontStrideMetres 0.60; BackStrideMetres 0.14; grip spacing 0.105 m; transfer 0.28 s; step 0.24 s; lift 0.055 m; rear heel 58 degrees |
 
-The former speed/acceleration/response settings were removed because active swing speed comes from the stick. Body proportions and reach live in `BattingRig.cs`, gesture gating in `SwingGesture.cs`, and mode angles in `BattingStroke.cs`.
+RecoveryDegreesPerSecond was removed with automatic recovery. Setting MaxSpeedKph above 136 is rejected. Body proportions and reach remain in BattingRig.cs, the angular motor in SwingMotion.cs, gesture gating in SwingGesture.cs and mode curves in BattingStroke.cs.
 
 ## Blender source and preview
 
@@ -63,7 +65,7 @@ Double-click **Preview Batsman.cmd**, or run:
 
 The lab shares the gameplay renderer. It displays separate stick/arm clock readings and whether a deliberate arc is active. With Joint markers enabled, orange shows the stick ray and teal shows the arm ray; X/B stop at their mode limits even if the stick continues. It offers live controls, front/back pressure sliders, slow/fast/reverse/front-foot/back-foot and all four shot demonstrations, looping, pause (Menu/Start or Space), one fixed tick (period), 25/50/100% playback, grip markers and JSON reload. It creates no delivery. Recorded ball replay is not implemented by this preview.
 
-Open **Art/Batsman/batsman.blend** in Blender. The model includes cricket clothing, pads, shoes, gloves, helmet/grille and bat, with a review camera and studio lights saved only in the editable source. Seven baked sample actions—Fast, FrontFoot, BackFoot, Defence, FullDrive, Push and HighFinish—are available in the Action Editor at 60 FPS. They are review/editing references exported from the actual runtime pose system. Gameplay uses the current stick angle and constrained IK; the baked actions are review examples.
+Open **Art/Batsman/batsman.blend** in Blender. The model includes cricket clothing, pads, shoes, gloves, helmet/grille and bat, with a review camera and studio lights saved only in the editable source. Seven baked sample actions—Fast, FrontFoot, BackFoot, Defence, FullDrive, Push and HighFinish—are available in the Action Editor at 60 FPS. They are review/editing references exported from the actual runtime pose system. Gameplay uses the speed-limited swing and constrained IK; the baked actions are review examples.
 
 The source generator is **tools/build_batsman.py**, with the mesh/morph/skin adapter in **tools/batsman_anatomy.py**. Run it with Blender's background launcher:
 
@@ -77,9 +79,15 @@ To refresh the baked actions after changing motion code, build the game and run 
 
 ## Runtime cost and verification
 
+The 11 November 2026 swing revision passes all 67 executable checks, Debug and ExportRelease builds without warnings, and Godot gameplay smoke checks. Rendered capture verifies 1,476 anatomical poses plus seven motion clips, including agreement between the rendered bat and collision transform. Blender samples were regenerated and the GLB reimported. No physical controller was attached; controller inputs were synthesized by the smoke checks.
+
+The speed governor uses value-type poses, bounded correction and no per-tick heap allocation. Collision sampling now interpolates the accepted bat endpoints, avoiding repeated full-body reconstruction in each collision substep. The allocation regression still passes. No render cap, physics frequency, asset resolution or node count was added by the governor.
+
+The existing 4K benchmark used ExportRelease assemblies in the Godot runner, RTX 4080 SUPER, GL Compatibility, VSync enabled, a confirmed 3840 x 2160 render target and no engine FPS cap. Eight scenarios each warmed for two seconds and sampled for three. Averages were 120.00-120.33 FPS; p99 frame times ranged 8.404-8.645 ms. Live play measured 117.31 FPS at the 1% low, physics p95 1.504 ms, 273 managed bytes/frame across the application and zero managed collections. Settings dragging recorded one collection per generation; working set ranged 271-290 MiB. Results are in artifacts/performance-practice.json, with the earlier bounce-build run preserved as artifacts/performance-bounce-baseline.json. These short runs do not establish long-session stability or packaged-export performance. The final cleanup removed unused pose arguments and old gesture-anchor state after measurement; it did not change the motion algorithm.
+
 The renderer caches 18 bone references and uses one skinned mesh with shared materials. An adaptive 256/512/1024-pixel transparent viewport updates only when pose or display scale changes. No textures are loaded and no meshes are constructed during animation. The source directory is excluded from Godot imports. Physics remains 120 Hz with the existing eight collision substeps. Focused rendering has no engine FPS cap; VSync remains configurable in Godot, and focus loss pauses play and limits background rendering to 30 FPS.
 
-`dotnet run --project Tests/Cricket.Physics.Tests.csproj` covers controls, trigger cancellation, separate grips, random movement continuity, 3D joint lengths, elbow continuity, rear-leg support, pitch clearance, planted toes, render-rate independence, collisions, momentum, energy and allocation behavior. Native capture additionally checks 1,476 combinations of weight/stroke/shot and all seven sample motion clips for stretched 3D limbs and agreement between the resolved rendered bat bone and the physical bat. See [performance measurements](PERFORMANCE.md) for the actual hardware results and export limitations.
+`dotnet run --project Tests/Cricket.Physics.Tests.csproj` covers controls, trigger cancellation, separate grips, random movement continuity, 3D joint lengths, elbow continuity, rear-leg support, ground-transparent bat motion, planted toes, render-rate independence, collisions, momentum, energy and allocation behavior. Native capture additionally checks 1,476 combinations of weight/stroke/shot and all seven sample motion clips for stretched 3D limbs and agreement between the resolved rendered bat bone and the physical bat. See [performance measurements](PERFORMANCE.md) for the actual hardware results and export limitations.
 
 ## Research behind the motion
 
@@ -88,19 +96,17 @@ The renderer caches 18 bone references and uses one skinned mesh with shared mat
 - [McErlain-Naylor et al., power-hitting kinematics (2021)](https://www.stuartmcnaylor.com/publication/male_female_batting/McErlain-Naylor_et_al_2021.pdf) informed the distinction between joint motion and bat speed. Group averages are not used as universal human joint limits.
 - The supplied stance photographs guide guard position, moderate knee flexion, distinct grips and facing the bowler. The supplied GIF guides the deep front-foot variation and overhead follow-through.
 
-Stride, timing, depth, grip adjustment and clearance values remain tunable gameplay choices. A physical controller play-test and further artist refinement are still useful for assessing feel and reference-level visual fidelity.
+Stride, timing, depth and grip adjustment values remain tunable gameplay choices. A physical controller play-test and further artist refinement are still useful for assessing feel and reference-level visual fidelity.
 
-## Implementation files
+## Files changed for the swing revision
 
 | Change | Files |
 | --- | --- |
-| Replaced control/pose system | `Core/Animation/AthletePose.cs`, `SwingGesture.cs`, `ShotStyle.cs`, `BattingStroke.cs`, `BattingRig.cs`, `BattingMotion.cs`, `BattingSettings.cs`, `Config/batsman.json` |
-| Added skinned presentation | `Scripts/Presentation/BatterModel.cs`, `Assets/Characters/batsman.glb` and its build/import metadata |
-| Added editable sources | `tools/build_batsman.py`, `tools/batsman_anatomy.py`, `Art/Batsman/batsman.blend`, `reference-motion.json`, CC0 reference/provenance files |
-| Updated integration/preview | `BattingControls.cs`, `GroundView.cs`, `BattingPreview.cs`, `Presentation/BattingPreviewSession.cs`, `GameController.cs`, `project.godot` |
-| Added preview/export diagnostics | `Preview Batsman.cmd`, `Scripts/Diagnostics/BattingPreview.Capture.cs`, `tools/Benchmark-Batsman.ps1` |
-| Updated validation | `Tests/BattingChecks.cs`, `Tests/AnimationChecks.cs`, `Tests/Program.cs`, gameplay automation and performance diagnostics |
-| Removed obsolete renderer | `Scripts/Presentation/BatterDrawing.cs` and its UID |
-| Updated guidance | README, batting/architecture/research/performance docs; ignored Blender backup files |
+| Added swing motor | `Core/Animation/SwingMotion.cs` |
+| Updated input, stance and pose | `Core/Animation/BattingRig.cs`, `BattingMotion.cs`, `BattingSettings.cs`, `BattingStroke.cs`, `SwingGesture.cs`, `Core/Simulation.cs`, `Config/batsman.json`, `Scripts/Input/BattingControls.cs` |
+| Updated preview and automation | `Scripts/Presentation/BattingPreview.cs`, `Scripts/Diagnostics/BattingPreview.Capture.cs`, `Scripts/Diagnostics/GameController.Automation.cs` |
+| Refreshed source motion/assets | `Art/Batsman/reference-motion.json`, `Art/Batsman/batsman.blend`, `Assets/Characters/batsman.glb` |
+| Added/updated regression checks | `Tests/SwingDynamicsChecks.cs` (new), `Tests/BattingChecks.cs`, `Tests/AnimationChecks.cs`, `Tests/Program.cs` |
+| Updated guidance | `README.md`, `docs/BATTING.md`, `docs/CRICKET_REFERENCES.md` |
 
-Existing unrelated practice, field, audio and project-instruction edits were retained.
+No files were removed. Automatic recovery, the obsolete recovery setting, the old stroke-anchor reset and bat ground-clearance adjustment were removed from the existing implementations.

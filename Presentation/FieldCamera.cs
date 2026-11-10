@@ -8,8 +8,9 @@ namespace Cricket2D.Presentation;
 /// </summary>
 public sealed class FieldCamera
 {
-    public const double Left = 82;
-    public const double Right = 1354;
+    // Keep wickets near the canvas edges, with room for dislodged bails.
+    public const double Left = 24;
+    public const double Right = 1440 - Left;
     public const double Top = 106;
     public const double GroundY = 760;
     public const double BallPadding = 18;

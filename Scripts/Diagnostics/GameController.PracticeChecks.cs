@@ -116,7 +116,7 @@ public partial class GameController
         valid &= Math.Abs(speed.Value - 95) < .11 && panel.Settings.Bowler == BowlerType.Medium;
         bowler.GrabFocus(); SmokeButton(JoyButton.DpadRight);
         valid &= panel.Settings.Bowler == BowlerType.Fast && Math.Abs(speed.Value - 110.1) < 1e-8;
-        foreach (double value in new[] { 1.53, 2.16 })
+        foreach (double value in new[] { 1.53, 2.16, 2.40 })
         {
             await Reveal(height); DragSlider(height, value);
             valid &= Math.Abs(height.Value - value) < .011 && panel.Values.ReleaseHeight == height.Value;

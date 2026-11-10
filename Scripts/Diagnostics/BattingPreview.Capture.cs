@@ -22,9 +22,10 @@ public partial class BattingPreview
                     var frame = rig.Frame with
                     {
                         SwingProgress = swing / 40.0,
-                        Shot = shot
+                        Shot = shot,
+                        BatAngle = double.NaN
                     };
-                    _batter.UpdatePose(BattingRig.BuildPose(frame, Session.Settings, Session.Physics), Session.Physics, 210, 1);
+                    _batter.UpdatePose(BattingRig.BuildPose(frame, Session.Settings), Session.Physics, 210, 1);
                     _batter.ValidateAnatomy();
                 }
         }

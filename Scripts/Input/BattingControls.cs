@@ -8,7 +8,7 @@ public static class BattingControls
 {
     private static readonly StringName SwingLeft="swing_left", SwingRight="swing_right",
         SwingUp="swing_up", SwingDown="swing_down", FrontWeight="front_weight", BackWeight="back_weight",
-        Defence="shot_defence", Push="shot_push", HighFinish="shot_high_finish";
+        Defence="shot_defence", Push="shot_push", HighFinish="shot_high_finish", FullDrive="shot_full_drive";
     public static void Register()
     {
         // Godot's built-in UI actions include analog axes, including native popups.
@@ -35,10 +35,10 @@ public static class BattingControls
     {
         Vector2 left=Godot.Input.GetVector(SwingLeft,SwingRight,SwingUp,SwingDown,0);
         // A deterministic priority resolves accidental simultaneous button presses.
-        ShotStyle shot=Godot.Input.IsActionPressed(Defence)?ShotStyle.Defence:
+        ShotStyle? shot=Godot.Input.IsActionPressed(Defence)?ShotStyle.Defence:
             Godot.Input.IsActionPressed(Push)?ShotStyle.Push:
             Godot.Input.IsActionPressed(HighFinish)?ShotStyle.HighFinish:
-            ShotStyle.FullDrive;
+            Godot.Input.IsActionPressed(FullDrive)?ShotStyle.FullDrive:null;
         return new(left.X,left.Y,0,0,Godot.Input.GetActionRawStrength(FrontWeight),
             Godot.Input.GetActionRawStrength(BackWeight),shot);
     }

@@ -10,7 +10,7 @@ Reviewed for the boundary implementation in November 2026. Sources guide the geo
 
 ## Implementation choices
 
-The wedge default is restitution **0.20**, friction **0.40**. These are explicit, uncalibrated tuning choices for a strongly damped foam surface. Users can change them independently of the geometric slope. The barricade inherits the pitch's existing **0.58** restitution and **0.22** friction unless overridden, as requested. Those pitch defaults are themselves tunable approximations, not a claim about a specific wall material.
+The wedge default is restitution **0.20**, friction **0.40**. These are explicit, uncalibrated tuning choices for a strongly damped foam surface. Users can change them independently of the geometric slope. The barricade inherits the pitch's current **0.43** restitution and **0.22** friction unless overridden, as requested. This inheritance is a configurable approximation, not a claim about a specific wall material. Grass outfield coefficients are separate and do not replace the wall or terrace response.
 
 The normal/tangential impulse calculation accounts for the ball's rotational inertia. A slope's actual normal redirects velocity; changing only horizontal speed would fail to create the upward deflection of a wedge. Friction can change both translation and spin while reducing total kinetic energy. Swept finite-radius contacts prevent a fast ball from jumping through the narrow cushion. Low-speed support handles sliding and rolling under gravity. Neither obstacle adds energy or applies an artificial inward velocity to a ball that clears its top.
 

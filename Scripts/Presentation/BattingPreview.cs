@@ -120,7 +120,7 @@ public partial class BattingPreview : Node2D
     {
         DrawRect(new(0, 0, 1440, 900), VisualTheme.Background);
         Text(new(55, 55), "BATTER / MOTION PREVIEW", 24, VisualTheme.OnDark);
-        Text(new(55, 84), "Start left stick at 8:30 and rotate through 6 • no button selects A", 16, VisualTheme.MutedOnDark);
+        Text(new(55, 84), "Start at 8:30 and rotate through 6 • release to brake and hold", 16, VisualTheme.MutedOnDark);
         for (int i = -3; i <= 3; i++)
         {
             float x = 535 + i * PreviewPixelsPerMetre * .5f;

@@ -87,31 +87,37 @@ public static class Contacts
     public static BallState GroundImpulse(BallState ball, SimulationSettings s)
     {
         if (ball.Velocity.Y >= 0) return ball;
-        double normalImpulse = -(1 + s.GroundRestitution) * s.BallMass * ball.Velocity.Y;
+        GroundSurface surface = GroundSurface.At(ball.Position.X, s);
+        double normalImpulse = -(1 + surface.Restitution) * s.BallMass * ball.Velocity.Y;
         // Surface slip at the bottom of a solid sphere: vx + omega * radius.
         double slip = ball.Velocity.X + ball.Spin * s.BallRadius;
         double inertia = 0.4 * s.BallMass * s.BallRadius * s.BallRadius;
         double tangentImpulse = Math.Clamp(-slip / (1 / s.BallMass + s.BallRadius * s.BallRadius / inertia),
-            -s.GroundFriction * normalImpulse, s.GroundFriction * normalImpulse);
+            -surface.Friction * normalImpulse, surface.Friction * normalImpulse);
+        // Grass/soil deformation removes energy beyond rigid-sphere contact friction.
+        // The 75 km/h, 15-degree reference impact has ~5.4 m/s normal speed.
+        // Fade this effective loss out at grazing speeds so tiny hops do not abruptly stop a rolling ball.
+        double retention = 1 - (1 - surface.TangentialRetention) * Math.Min(1, -ball.Velocity.Y / 5);
         return new(new(ball.Position.X, s.BallRadius),
-            new(ball.Velocity.X + tangentImpulse / s.BallMass, -s.GroundRestitution * ball.Velocity.Y),
-            ball.Spin + s.BallRadius * tangentImpulse / inertia);
+            new((ball.Velocity.X + tangentImpulse / s.BallMass) * retention, -surface.Restitution * ball.Velocity.Y),
+            (ball.Spin + s.BallRadius * tangentImpulse / inertia) * retention);
     }
 
     /// <summary>Supported contact: friction first removes slip, then rolling resistance slows the ball.</summary>
     public static BallState GroundMotion(BallState ball, double dt, SimulationSettings s)
     {
+        GroundSurface surface = GroundSurface.At(ball.Position.X, s);
         double vx = ball.Velocity.X + BallFlight.Acceleration(new(ball.Velocity.X, 0), 0, s).X * dt;
         double inertia = 0.4 * s.BallMass * s.BallRadius * s.BallRadius;
         double slip = vx + ball.Spin * s.BallRadius;
         double requiredImpulse = -slip / (1 / s.BallMass + s.BallRadius * s.BallRadius / inertia);
-        double limit = s.GroundFriction * s.BallMass * s.Gravity * dt;
+        double limit = surface.Friction * s.BallMass * s.Gravity * dt;
         double impulse = Math.Clamp(requiredImpulse, -limit, limit);
         vx += impulse / s.BallMass;
         double spin = ball.Spin + s.BallRadius * impulse / inertia;
         if (Math.Abs(requiredImpulse) <= limit)
         {
-            vx = Math.Sign(vx) * Math.Max(0, Math.Abs(vx) - s.RollingResistance * s.Gravity * dt);
+            vx = Math.Sign(vx) * Math.Max(0, Math.Abs(vx) - surface.RollingResistance * s.Gravity * dt);
             spin = -vx / s.BallRadius;
         }
         return new(new(ball.Position.X + (ball.Velocity.X + vx) * dt / 2, s.BallRadius), new(vx, 0), spin);

@@ -11,9 +11,10 @@ public static class PitchDimensions
     public const double PoppingCrease = 1.2192;
     public const double ReleaseX = 1.2192;
     public const double BatterReferenceX = 19.08;
+    public const double PreparedPitchMargin = 0.30;
 }
 
-/// <summary>Baseline coefficients are tunable approximations, not measured pitch data.</summary>
+/// <summary>Effective ball/surface coefficients; reference tests and limitations are in docs/PHYSICS.md.</summary>
 public sealed record SimulationSettings
 {
     public double BallMass { get; init; } = 0.156;
@@ -23,9 +24,17 @@ public sealed record SimulationSettings
     public double DragCoefficient { get; init; } = 0.47;
     public double MagnusCoefficient { get; init; } = 0.12;
     public double SpinDecay { get; init; } = 0.025;
+    // Effective prepared-pitch calibration from match oblique impacts (James et al., 2004).
+    // At 36 m/s and 12.5 degrees: ~89% speed retained, ~65% rebound/incident angle.
+    // These are fitted coefficients, not vertical-drop or steel-plate measurements.
     public double GroundRestitution { get; init; } = 0.58;
-    public double GroundFriction { get; init; } = 0.22;
+    public double GroundFriction { get; init; } = 0.28;
     public double RollingResistance { get; init; } = 0.025;
+    // Grass outfield: effective values calibrated against the AFL/CA turf reference tests.
+    public double OutfieldRestitution { get; init; } = 0.30;
+    public double OutfieldFriction { get; init; } = 0.35;
+    public double OutfieldRollingResistance { get; init; } = 0.075;
+    public double OutfieldTangentialRetention { get; init; } = 0.65;
     // Curtis et al. (2021), table 1 mean mass/inertia, translated to a grip 0.10 m from the handle end.
     public double BatMass { get; init; } = 1.17;
     public double BatCentreOfMassFromGrip { get; init; } = 0.40;
@@ -46,10 +55,12 @@ public sealed record SimulationSettings
         double[] positive = [BallMass, BallRadius, Gravity, BatMass, BatInertiaAboutGrip,
             BatHalfThickness, BatLength, HandleLength, BatInertiaAboutCentreOfMass];
         double[] nonNegative = [AirDensity, DragCoefficient, MagnusCoefficient, SpinDecay,
-            GroundFriction, RollingResistance, BatFriction, BatCentreOfMassFromGrip];
+            GroundFriction, RollingResistance, OutfieldFriction, OutfieldRollingResistance, BatFriction, BatCentreOfMassFromGrip];
         if (positive.Any(x => !double.IsFinite(x) || x <= 0) ||
             nonNegative.Any(x => !double.IsFinite(x) || x < 0) ||
             !double.IsFinite(GroundRestitution) || GroundRestitution is < 0 or > 1 ||
+            !double.IsFinite(OutfieldRestitution) || OutfieldRestitution is < 0 or > 1 ||
+            !double.IsFinite(OutfieldTangentialRetention) || OutfieldTangentialRetention is < 0 or > 1 ||
             !double.IsFinite(BatRestitution) || BatRestitution is < 0 or > 1 ||
             HandleLength >= BatLength || BatCentreOfMassFromGrip >= BatLength || Substeps is < 1 or > 32)
             throw new ArgumentException("Invalid physics coefficients. Check Config/physics.json.");
