@@ -110,7 +110,7 @@ public partial class GroundView : Node2D
     {
         float strikerX = W(new(PitchDimensions.WicketSeparation, 0)).X;
         float bowlerX = W(Vec2.Zero).X;
-        float margin = .30f * PixelsPerMetre;
+        float margin = (float)PitchDimensions.PreparedPitchMargin * PixelsPerMetre;
         float depth = Math.Max(3, .33f * PixelsPerMetre);
         DrawRect(new(strikerX - margin, GroundY, bowlerX - strikerX + margin * 2, depth), new("9e9471"));
         DrawLine(new(strikerX - margin, GroundY), new(bowlerX + margin, GroundY), new("c7bb91"), Math.Max(1, 2 * Zoom));

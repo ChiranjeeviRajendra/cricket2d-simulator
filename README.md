@@ -56,6 +56,8 @@ The release is at x = 1.2192 m, on the bowler's popping crease. The length setti
 
 The batter is always visible and permanently invulnerable to the ball. The ball passes through his body, pads and helmet without a collision response. **The bat and wickets remain collidable.**
 
+The prepared pitch and grass outfield now have separate ball responses. Outfield impacts lose more bounce and forward speed, and rolling balls slow and stop sooner on grass. Tune the strip and `Outfield*` coefficients in `Config/physics.json`; [the physics notes](docs/PHYSICS.md) describe the reference tests, measured results and limits of this 2D model.
+
 Bat contacts now use the supplied **perfect-shot** or **imperfect-shot** recording based on contact position and face alignment; wicket hits use the supplied **wicket** sound. Quieter impacts play more softly. Add sample variations and tune selection/volume in `Config/audio.json`; see [AUDIO.md](docs/AUDIO.md) for extending the sound library.
 
 ## Stats, camera and boundaries
