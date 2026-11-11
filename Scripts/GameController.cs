@@ -13,6 +13,9 @@ public partial class GameController : Node2D
     private GameHud _hud = null!;
     private MainMenu _menu = null!;
     private SimulationSettings _settings = null!;
+    private GameplaySettings _gameplay = null!;
+    private string _userSettingsPath = "";
+    private double _savedBowlingSpeed;
     private BattingSettings _batting = null!;
     private FieldSettings _field = null!;
     private bool _smokeMenuStarted, _smokeMenuComplete, _smokeExitRequested;
@@ -77,11 +80,20 @@ public partial class GameController : Node2D
         }
         _smokeTest = args.Contains("--smoke-test");
         _capturePreview = args.Contains("--capture-preview");
+        bool automation = _smokeTest || _capturePreview || args.Contains("--performance-test");
+        _userSettingsPath = ProjectSettings.GlobalizePath(automation ? "res://artifacts/settings-automation.json" : "user://settings.json");
+        _gameplay = automation ? new() : UserSettingsStore.Load(_userSettingsPath);
+        _savedBowlingSpeed = _gameplay.BowlingSpeed;
         var menuCanvas = new CanvasLayer { Layer = 10 };
         AddChild(menuCanvas);
-        _menu = new MainMenu();
+        _menu = new MainMenu { Settings = _gameplay };
         menuCanvas.AddChild(_menu);
         _menu.BattingRequested += StartBatting;
+        _menu.SettingsCloseRequested += () =>
+        {
+            if (SaveUserSettings()) _menu.CloseSettings();
+            else _menu.SettingsPanel.ShowSaveError();
+        };
         _menu.ExitRequested += () =>
         {
             if (_smokeTest) _smokeExitRequested = true;
@@ -111,7 +123,7 @@ public partial class GameController : Node2D
             if (_hud.DeliveryPanel.Visible) _hud.DeliveryPanel.Open();
             return;
         }
-        _simulation = new(_settings, _batting, _field);
+        _simulation = new(_settings, _batting, _field, _gameplay);
         _audio = new ImpactAudio();
         AddChild(_audio);
         _audio.SetPaused(_paused);
@@ -346,9 +358,22 @@ public partial class GameController : Node2D
         _hud.DeliveryPanel.SetPreparation(_practice.IsPreparing, _practice.CanBowl, _practice.Error);
     }
 
+    private bool SaveUserSettings()
+    {
+        if (_gameplay == null || _gameplay.BowlingSpeed == _savedBowlingSpeed) return true;
+        if (!UserSettingsStore.TrySave(_userSettingsPath, _gameplay, out string error))
+        {
+            GD.PushWarning($"Cannot save game settings: {error}");
+            return false;
+        }
+        _savedBowlingSpeed = _gameplay.BowlingSpeed;
+        return true;
+    }
+
     private async void QuitGame()
     {
         if (_quitting) return;
+        SaveUserSettings();
         _quitting = true;
         _audio?.Stop();
         // Godot's audio mixer releases stopped playback asynchronously. Let it

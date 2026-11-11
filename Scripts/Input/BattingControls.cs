@@ -47,9 +47,18 @@ public static class BattingControls
         evt is InputEventJoypadButton { Pressed:true, ButtonIndex:JoyButton.Start } ||
         evt is InputEventKey { Pressed:true, Echo:false, Keycode:Key.Space };
 
-    public static bool IsNextDelivery(InputEvent evt) =>
-        evt is InputEventJoypadButton { Pressed: true, ButtonIndex: JoyButton.DpadUp } ||
-        evt is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Up };
+    public static bool IsNextDelivery(InputEvent evt)
+    {
+        if (evt is not InputEventJoypadButton { Pressed: true } button) return false;
+        // The second shoulder press completes the chord on this controller only.
+        // Held buttons generate no further requests; either press order works.
+        return button.ButtonIndex switch
+        {
+            JoyButton.LeftShoulder => Godot.Input.IsJoyButtonPressed(button.Device, JoyButton.RightShoulder),
+            JoyButton.RightShoulder => Godot.Input.IsJoyButtonPressed(button.Device, JoyButton.LeftShoulder),
+            _ => false
+        };
+    }
 
     private static void Axis(string name,Key key,JoyAxis axis,float direction)
     {

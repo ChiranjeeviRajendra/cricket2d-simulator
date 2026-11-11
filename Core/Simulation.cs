@@ -6,10 +6,11 @@ public enum ContactKind { Pitch, Bat, Wicket, Boundary, Barricade, Terrace }
 public readonly record struct ContactEvent(ContactKind Kind, Vec2 Position, double SpeedBefore, double SpeedAfter,
     double ImpactSpeed = 0, double? BatBladeFraction = null, double? BatFaceAlignment = null);
 
-/// <summary>Single owner of time/state. One Tick call always advances exactly 1/120 s.</summary>
+/// <summary>One Tick advances 1/120 s of gameplay; the released ball uses the selected speed until its first bat hit.</summary>
 public sealed class Simulation
 {
     public SimulationSettings Settings { get; }
+    public GameplaySettings Gameplay { get; }
     public BattingSettings Batting { get; }
     public FieldGeometry Field { get; }
     public BattingRig Batter { get; private set; }
@@ -32,10 +33,12 @@ public sealed class Simulation
     public string Outcome => WicketHit ? "BOWLED" : BatHit ? "BAT CONTACT" :
         Phase == DeliveryPhase.Live && Ball.Position.X > PitchDimensions.WicketSeparation + 0.2 ? "THROUGH TO KEEPER" : "BALL IN PLAY";
 
-    public Simulation(SimulationSettings settings, BattingSettings? batting = null, FieldSettings? field = null)
+    public Simulation(SimulationSettings settings, BattingSettings? batting = null, FieldSettings? field = null,
+        GameplaySettings? gameplay = null)
     {
         settings.Validate();
         Settings = settings;
+        Gameplay = gameplay ?? new();
         Field = new(field ?? new(), settings);
         Batting = batting ?? new();
         Batter = new(settings, Batting);
@@ -127,11 +130,15 @@ public sealed class Simulation
         for (int iteration = 0; iteration < 6 && elapsed < dt - 1e-10; iteration++)
         {
             double remaining = dt - elapsed;
+            // Only the released ball uses slow time. Keep bat motion and collision
+            // impulses in real time/SI units, and restore full time at the first hit,
+            // including any time left in this substep after that contact.
+            double ballTimeScale = BatHit ? 1 : Gameplay.BowlingSpeed;
             bool rolling = Ball.Position.Y <= Settings.BallRadius + 1e-5 && Math.Abs(Ball.Velocity.Y) < 0.08;
             bool supported = Field.TrySupport(Ball, Settings.BallRadius, out var support);
             if (supported) rolling = false;
-            BallState Travel(double time) => supported ? Contacts.SurfaceMotion(Ball, support, time, Settings) :
-                rolling ? Roll(Ball, time) : BallFlight.Integrate(Ball, time, Settings);
+            BallState Travel(double time) => supported ? Contacts.SurfaceMotion(Ball, support, time * ballTimeScale, Settings) :
+                rolling ? Roll(Ball, time * ballTimeScale) : BallFlight.Integrate(Ball, time * ballTimeScale, Settings);
             BallState next = Travel(remaining);
             double earliest = remaining;
             ContactKind? kind = null;
@@ -151,7 +158,7 @@ public sealed class Simulation
                     }
                     earliest = hi;
                 }
-                else earliest = BallFlight.GroundTime(Ball, remaining, Settings);
+                else earliest = BallFlight.GroundTime(Ball, remaining * ballTimeScale, Settings) / ballTimeScale;
                 kind = ContactKind.Pitch;
             }
             double sweepMinX = Math.Min(Ball.Position.X, next.Position.X) - Settings.BallRadius;

@@ -113,6 +113,8 @@ internal static class FieldChecks
         while (sim.Phase != DeliveryPhase.Live) sim.Tick(default);
         typeof(Simulation).GetProperty(nameof(Simulation.Ball), BindingFlags.Public | BindingFlags.Instance)!.SetValue(sim, ball);
         typeof(Simulation).GetProperty(nameof(Simulation.PreviousBall))!.SetValue(sim, ball);
+        // These fixtures inject outgoing shots, after incoming-ball slow motion ends.
+        typeof(Simulation).GetProperty(nameof(Simulation.BatHit))!.SetValue(sim, true);
         return sim;
     }
     private static List<ContactEvent> Run(Simulation sim, int ticks)

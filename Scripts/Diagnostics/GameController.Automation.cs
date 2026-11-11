@@ -16,7 +16,7 @@ public partial class GameController
         bool valid = _menu.Visible && !_menu.ShowingPractice && _simulation == null && _menu.UnavailableChoicesDisabled;
         Click("PlayMatch");
         Click("Settings");
-        valid &= !_menu.ShowingPractice && _simulation == null;
+        valid &= await CheckMainSettings();
         Click("Practice");
         valid &= _menu.ShowingPractice && _simulation == null;
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -34,14 +34,17 @@ public partial class GameController
         SmokeButton(JoyButton.DpadDown); // Skip disabled Bowling and select Back.
         SmokeButton(JoyButton.A);
         valid &= !_menu.ShowingPractice;
-        SmokeButton(JoyButton.DpadDown); // Skip disabled Settings and select Exit.
+        SmokeButton(JoyButton.DpadDown); // Settings is now available.
+        SmokeButton(JoyButton.DpadDown); // Exit.
         SmokeButton(JoyButton.A);
         valid &= _smokeExitRequested;
         SmokeButton(JoyButton.DpadUp);
+        SmokeButton(JoyButton.DpadUp); // Return through Settings to Practice.
         SmokeButton(JoyButton.A);
         SmokeButton(JoyButton.A);
         valid &= !_menu.Visible && _simulation != null && _simulation.Phase == DeliveryPhase.Setup && !_hud.DeliveryPanel.Visible;
-        valid &= _audio is { ReadyForPlayback: true };
+        valid &= _audio is { ReadyForPlayback: true } && _simulation != null && ReferenceEquals(_simulation.Gameplay, _gameplay) &&
+            _simulation.Gameplay.BowlingSpeed == .75;
         SmokeKey(Key.Enter);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -54,6 +57,7 @@ public partial class GameController
         SmokeButton(JoyButton.A);
         valid &= !_hud.DeliveryPanel.Visible && !_menu.Visible && !_paused && !_hud.PauseMenu.Visible;
         valid &= await CheckDeliveryRequestCancellation();
+        valid &= _simulation?.Gameplay.BowlingSpeed == .75;
         _hud.DeliveryPanel.SetSettings(new PracticeBowlingSettings().WithManualSpeed(115.2) with { RandomPitchLength = false, RandomSpeed = false });
         GD.Print(valid ? "SMOKE PASS: main menu, disabled modes, mouse/keyboard/controller navigation, Back, Exit and Practice > Batting." :
             "SMOKE FAIL: main menu navigation.");
@@ -118,11 +122,14 @@ public partial class GameController
             var plan = _simulation.Plan;
             var ball = _simulation.Ball;
             double peakSpeed = _simulation.Statistics.MaxSpeed;
+            SmokeNextDelivery(); // The chord must not bowl through the pause menu.
+            _smokeLifecycleValid &= !_nextDeliveryRequested && _simulation.Ball == ball && _simulation.PhaseTime == time;
             SmokeButton(JoyButton.DpadUp);
             _smokeLifecycleValid &= GetViewport().GuiGetFocusOwner()?.Name == "MainMenu" && ReferenceEquals(plan, _simulation.Plan);
             SmokeButton(JoyButton.DpadUp); SmokeButton(JoyButton.A);
             _smokeLifecycleValid &= _hud.DeliveryPanel.Visible && _hud.DeliveryPanel.EditingPausedDelivery && !_hud.PauseMenu.Visible;
             _hud.DeliveryPanel.SetSettings(_practice!.Settings.WithManualSpeed(115.3));
+            SmokeNextDelivery(); // Paused settings must also consume gameplay input.
             var pitchGuide = (CheckBox)_hud.DeliveryPanel.FindChild("ShowPitchPosition", true, false);
             pitchGuide.ButtonPressed = false;
             _PhysicsProcess(SimulationSettings.Tick);
@@ -147,9 +154,21 @@ public partial class GameController
         if (_smokeTicks == 901)
         {
             double peakSpeed = _simulation.Statistics.MaxSpeed;
+            var plan = _simulation.Plan;
+            double time = _simulation.PhaseTime;
             SmokeButton(JoyButton.DpadUp);
+            SmokeKey(Key.Up);
+            SmokeButton(JoyButton.LeftShoulder);
+            SmokeButton(JoyButton.RightShoulder);
+            SmokeButton(JoyButton.LeftShoulder, true);
+            SmokeButton(JoyButton.RightShoulder, true, device: 1);
+            SmokeButton(JoyButton.LeftShoulder, false);
+            SmokeButton(JoyButton.RightShoulder, false, device: 1);
+            _smokeLifecycleValid &= !_nextDeliveryRequested && ReferenceEquals(plan, _simulation.Plan) &&
+                _simulation.Phase == DeliveryPhase.Live && _simulation.PhaseTime == time;
+            SmokeNextDelivery();
             int seed = _practice!.Seed;
-            SmokeButton(JoyButton.DpadUp); // Do not queue or reroll a second request while preparing/winding up.
+            SmokeNextDelivery(); // Do not queue or reroll a second request while preparing/winding up.
             _smokeLifecycleValid &= !_hud.DeliveryPanel.Visible && _practice.Seed == seed &&
                 _simulation.Statistics.MaxSpeed == peakSpeed;
         }
@@ -168,7 +187,7 @@ public partial class GameController
                 _hud.DeliveryPanel.Guides == _ground.Guides;
             SmokeButton(JoyButton.A); SmokeButton(JoyButton.A);
             valid &= !_menu.Visible && _simulation.Phase == DeliveryPhase.Setup && !_hud.PauseMenu.Visible && !_hud.DeliveryPanel.Visible;
-            GD.Print(valid ? "SMOKE PASS: D-pad next ball, pause/resume/settings/main menu, frozen ball, session defaults and D-pad-only UI." : "SMOKE FAIL: delivery lifecycle or controller menu.");
+            GD.Print(valid ? "SMOKE PASS: shoulder-chord next ball, rejected Up/single/split-controller inputs, pause/resume/settings/main menu, frozen ball, session defaults and D-pad-only UI." : "SMOKE FAIL: delivery lifecycle or controller menu.");
             GD.Print($"Controller devices detected: {Godot.Input.GetConnectedJoypads().Count}");
             GetTree().Quit(valid ? 0 : 1);
         }
@@ -178,11 +197,24 @@ public partial class GameController
     {
         // A render frame may contain several physics ticks. Explicitly dispatch each
         // press/release rather than assuming a frame occurred between two ticks.
-        foreach (bool pressed in new[] { true, false })
-        {
-            Godot.Input.ParseInputEvent(new InputEventJoypadButton { Device = 0, ButtonIndex = button, Pressed = pressed });
-            Godot.Input.FlushBufferedEvents();
-        }
+        SmokeButton(button, true);
+        SmokeButton(button, false);
+    }
+
+    private static void SmokeButton(JoyButton button, bool pressed, int device = 0)
+    {
+        Godot.Input.ParseInputEvent(new InputEventJoypadButton { Device = device, ButtonIndex = button, Pressed = pressed });
+        Godot.Input.FlushBufferedEvents();
+    }
+
+    private static void SmokeNextDelivery(bool rightFirst = false)
+    {
+        JoyButton first = rightFirst ? JoyButton.RightShoulder : JoyButton.LeftShoulder;
+        JoyButton second = rightFirst ? JoyButton.LeftShoulder : JoyButton.RightShoulder;
+        SmokeButton(first, true);
+        SmokeButton(second, true);
+        SmokeButton(first, false);
+        SmokeButton(second, false);
     }
 
     private static void SmokeKey(Key key)
@@ -272,6 +304,11 @@ public partial class GameController
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         DirAccess.MakeDirRecursiveAbsolute(ProjectSettings.GlobalizePath("res://artifacts"));
         SaveCapture("res://artifacts/main-menu.png");
+        _menu.ShowSettings();
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/main-settings.png");
+        _menu.ShowMain();
+        SmokeButton(JoyButton.DpadDown);
         SmokeButton(JoyButton.DpadDown);
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         SaveCapture("res://artifacts/main-menu-selected-exit.png");

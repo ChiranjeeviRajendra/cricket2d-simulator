@@ -1,3 +1,4 @@
+using Cricket.Physics;
 using Godot;
 
 namespace Cricket2D;
@@ -7,12 +8,16 @@ public partial class MainMenu : Control
 {
     public event Action? BattingRequested;
     public event Action? ExitRequested;
+    public event Action? SettingsCloseRequested;
+    public GameplaySettings Settings { get; init; } = new();
+    public MainSettingsPanel SettingsPanel { get; private set; } = null!;
     public bool ShowingPractice { get; private set; }
+    public bool ShowingSettings => SettingsPanel.Visible;
     private VBoxContainer _mainChoices = null!, _practiceChoices = null!;
     private Label _heading = null!;
     private Button _practice = null!, _exit = null!, _batting = null!, _back = null!;
     private Button _match = null!, _settings = null!, _bowling = null!;
-    internal bool UnavailableChoicesDisabled => _match.Disabled && _settings.Disabled && _bowling.Disabled;
+    internal bool UnavailableChoicesDisabled => _match.Disabled && _bowling.Disabled && !_settings.Disabled;
 
     public override void _Ready()
     {
@@ -41,12 +46,15 @@ public partial class MainMenu : Control
         _mainChoices = Choices(content);
         _match = Choice(_mainChoices, "Play Match", null);
         _practice = Choice(_mainChoices, "Practice", ShowPractice);
-        _settings = Choice(_mainChoices, "Settings", null);
+        _settings = Choice(_mainChoices, "Settings", ShowSettings);
         _exit = Choice(_mainChoices, "Exit", () => ExitRequested?.Invoke());
         _practiceChoices = Choices(content);
         _batting = Choice(_practiceChoices, "Batting", () => BattingRequested?.Invoke());
         _bowling = Choice(_practiceChoices, "Bowling", null);
         _back = Choice(_practiceChoices, "Back", ShowMain);
+        SettingsPanel = new MainSettingsPanel { Settings = Settings };
+        content.AddChild(SettingsPanel);
+        SettingsPanel.CloseRequested += () => SettingsCloseRequested?.Invoke();
         var hint = VisualTheme.Label("D-pad / arrows to move   ·   Enter / A to select", 14, VisualTheme.MutedOnDark);
         hint.HorizontalAlignment = HorizontalAlignment.Center;
         stack.AddChild(hint);
@@ -69,6 +77,7 @@ public partial class MainMenu : Control
         Show();
         ShowingPractice = false;
         _heading.Text = "Main Menu";
+        SettingsPanel.Hide();
         _practiceChoices.Hide();
         _mainChoices.Show();
         _practice.GrabFocus();
@@ -78,13 +87,30 @@ public partial class MainMenu : Control
     {
         ShowingPractice = true;
         _heading.Text = "Practice";
+        SettingsPanel.Hide();
         _mainChoices.Hide();
         _practiceChoices.Show();
         _batting.GrabFocus();
     }
 
+    public void ShowSettings()
+    {
+        ShowingPractice = false;
+        _heading.Text = "Settings";
+        _mainChoices.Hide();
+        _practiceChoices.Hide();
+        SettingsPanel.Open();
+    }
+
+    public void CloseSettings()
+    {
+        ShowMain();
+        _settings.GrabFocus();
+    }
+
     public bool HandleInput(InputEvent evt)
     {
+        if (ShowingSettings) return SettingsPanel.HandleInput(evt);
         if (evt is InputEventJoypadMotion) return true;
         int direction = 0;
         bool accept = false, back = false;
@@ -102,7 +128,7 @@ public partial class MainMenu : Control
         }
         if (direction != 0 || accept)
         {
-            Button[] enabled = ShowingPractice ? [_batting, _back] : [_practice, _exit];
+            Button[] enabled = ShowingPractice ? [_batting, _back] : [_practice, _settings, _exit];
             int selected = Array.IndexOf(enabled, GetViewport().GuiGetFocusOwner());
             if (direction != 0) MoveSelection(direction);
             else enabled[Math.Max(0, selected)].EmitSignal(BaseButton.SignalName.Pressed);
@@ -118,7 +144,7 @@ public partial class MainMenu : Control
 
     private void MoveSelection(int direction)
     {
-        Button[] enabled = ShowingPractice ? [_batting, _back] : [_practice, _exit];
+        Button[] enabled = ShowingPractice ? [_batting, _back] : [_practice, _settings, _exit];
         int selected = Array.IndexOf(enabled, GetViewport().GuiGetFocusOwner());
         enabled[(Math.Max(0, selected) + direction + enabled.Length) % enabled.Length].GrabFocus();
     }

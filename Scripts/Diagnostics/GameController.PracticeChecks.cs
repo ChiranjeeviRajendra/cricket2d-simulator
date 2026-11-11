@@ -202,15 +202,15 @@ public partial class GameController
     {
         _hud.DeliveryPanel.SetSettings(new PracticeBowlingSettings().WithManualSpeed(18) with
             { RandomPitchLength = false, RandomSpeed = false, ManualLength = 25 });
-        SmokeButton(JoyButton.DpadUp);
+        SmokeNextDelivery(rightFirst: true);
         int seed = _practice!.Seed;
-        SmokeButton(JoyButton.DpadUp);
+        SmokeNextDelivery();
         bool valid = _nextDeliveryRequested && _practice.Seed == seed;
         SmokeButton(JoyButton.Start);
         await WaitForDelivery();
         valid &= !_nextDeliveryRequested && _paused && _simulation.Phase == DeliveryPhase.Setup && _hud.PauseMenu.Visible;
         SmokeButton(JoyButton.Start);
-        SmokeButton(JoyButton.DpadUp);
+        SmokeNextDelivery();
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         valid &= !_nextDeliveryRequested && _hud.DeliveryPanel.Visible && !_hud.DeliveryPanel.CanBowl && _practice.Error.Length > 0;
@@ -218,7 +218,7 @@ public partial class GameController
         _hud.DeliveryPanel.SetSettings(new());
         valid &= await WaitForDelivery();
         _hud.DeliveryPanel.Hide(); RefreshPause();
-        SmokeButton(JoyButton.DpadUp);
+        SmokeNextDelivery(rightFirst: true);
         valid &= _simulation.Phase == DeliveryPhase.Windup && !_hud.DeliveryPanel.Visible;
         SmokeButton(JoyButton.Start); SmokeButton(JoyButton.DpadUp); SmokeButton(JoyButton.A);
         valid &= _menu.Visible && !_nextDeliveryRequested && !_paused;

@@ -167,6 +167,8 @@ internal static class BallSurfaceChecks
         for (int i = 0; i < 200 && sim.Phase != DeliveryPhase.Live; i++) sim.Tick(default);
         typeof(Simulation).GetProperty(nameof(Simulation.Ball), BindingFlags.Public | BindingFlags.Instance)!.SetValue(sim, ball);
         typeof(Simulation).GetProperty(nameof(Simulation.PreviousBall))!.SetValue(sim, ball);
+        // Surface fixtures represent outgoing balls at normal speed.
+        typeof(Simulation).GetProperty(nameof(Simulation.BatHit))!.SetValue(sim, true);
         return sim;
     }
 }
