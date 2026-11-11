@@ -17,7 +17,7 @@ The selected mode persists on button release. Releasing the stick **or** the hel
 
 R2/RT (E) increases forward transfer from the default 35% stance to full forward transfer. L2/LT (Q) moves toward rear-leg support and the tallest stance. Equal trigger pressures cancel to the default stance. Trigger release returns body weight to that baseline; swing angle and shot mode remain held. Feet lift before stepping and remain planted while supporting weight.
 
-D-pad Up / keyboard Up bowls. Menu/Start, Space or Escape pauses; View/Select or Enter opens delivery setup. Menus retain A/confirm and B/back. Free swings work before bowling while the delivery panel is closed.
+L1/LB + R1/RB together on the same controller bowls; either shoulder can be pressed first. D-pad Up / keyboard Up only navigate menus. Menu/Start, Space or Escape pauses; View/Select or Enter opens delivery setup. Menus retain A/confirm and B/back. Free swings work before bowling while the delivery panel is closed.
 
 ## Swing speed and braking
 

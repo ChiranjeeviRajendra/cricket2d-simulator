@@ -22,7 +22,7 @@ Focused rendering has **no engine FPS cap**, with VSync enabled. Focus loss paus
 
 The game opens on the **Main Menu** with **Play Match** (disabled), **Practice**, **Settings** (disabled) and **Exit**. Select **Practice → Batting** to enter batting gameplay; **Bowling** is disabled. Menus support mouse clicks, arrow keys/D-pad, Enter/A to select, and Escape/B to go back from Practice. Neither stick navigates UI, changes sliders, or moves the bowler dropdown selection. Selected items use a charcoal fill and soft ivory text; the remaining UI uses soft ivory panels and warm grey text.
 
-Batting starts on the idle field. Press **D-pad Up / keyboard Up** to bowl the first or next ball with the current settings. After release, play continues until you request the next ball; there is no automatic repeat. One press prepares and starts one delivery, and extra presses during preparation or windup are ignored. **View / Select / Enter** also opens the existing delivery setup, where **Bowl** is focused and enabled once preparation finishes. A/Enter activates the focused control; **B / Escape** closes the bowler list or leaves setup for the main menu.
+Batting starts on the idle field. Press **L1/LB + R1/RB together** on the same controller to bowl the first or next ball with the current settings. Either shoulder can be pressed first; both must be held together. After release, play continues until you request the next ball; there is no automatic repeat. Each combination prepares and starts one delivery, and extra presses during preparation or windup are ignored. D-pad Up and keyboard Up only navigate menus. **View / Select / Enter** also opens the existing delivery setup, where **Bowl** is focused and enabled once preparation finishes. A/Enter activates the focused control; **B / Escape** closes the bowler list or leaves setup for the main menu.
 
 **Menu / Start**, **Escape**, or **Space** during play opens the pause menu with **Resume**, **Settings**, and **Main Menu**. Settings opens **Batting Practice Settings** while keeping the current ball and measurements frozen. Its **Back** button or B/Escape returns to the pause menu; Resume, Start, or B from the pause menu continues the same ball. Bowling changes apply to the next delivery. Main Menu ends practice and resets all practice settings and guide checkboxes to their defaults. Exiting the application also discards them; nothing is saved to disk. A/B remain shot controls during play.
 
@@ -81,7 +81,7 @@ Edit [`Config/field.json`](Config/field.json) and restart to change boundary dis
 | Y: follows A to 2, then blade turns toward 3 as arms reach 12 | Hold Y at any point | I |
 | Front / back weight | R2 / L2, progressive | E / Q |
 | Pause menu / resume | Menu / Start | Escape or Space during play |
-| Bowl first / next ball | D-pad Up during play | Up |
+| Bowl first / next ball | L1/LB + R1/RB together during play | Enter opens setup, then Enter on Bowl |
 | Open / return to delivery settings | View / Select | Enter |
 | Navigate setup | D-pad | Arrows, Tab or mouse |
 | Activate setup control (Bowl starts delivery) | A | Enter / Space |
