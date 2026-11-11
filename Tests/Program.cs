@@ -23,6 +23,11 @@ var tests = new (string Name, Action Run)[]
     ("Bad inputs and physically unreachable lengths are rejected", Validation),
     ("Exact wicket spacing and inclusive delivery limits", DeliveryBounds),
     ("Delivery waits indefinitely for a manual return to setup", Lifecycle),
+    ("Bowling speeds 0.5/0.75/1.0 preserve windup, batting and gameplay clocks", DeliveryTimingChecks.ReleaseAndAnimation),
+    ("Pitch and wicket contacts retain incoming-ball slow motion", DeliveryTimingChecks.NonBatContacts),
+    ("Bat impact restores full speed within the contact tick and the next ball resets", DeliveryTimingChecks.BatImpactAndReset),
+    ("Global bowling speed survives save/reload and invalid saves fall back safely", UserSettingsChecks.Persistence),
+    ("Bowling speed is shared across simulations, retained on reset and range-checked", UserSettingsChecks.UniversalPreference),
     ("Per-delivery maxima retain peak speed, horizontal distance and height", DeliveryMaxima),
     ("Speed entry converts km/h to the unchanged SI simulation", SpeedConversion),
     ("Live simulation agrees with delivery solver", LiveLanding),
@@ -330,7 +335,7 @@ static void PlayableSwing()
 {
     int hits = 0;
     double highestExitSpeed = 0;
-    for (int timing = 150; timing <= 240; timing += 6)
+    for (int timing = 230; timing <= 350; timing += 6)
     {
         var sim = new Simulation(new());
         sim.Begin(new(32, 16, 2.15), out _);
@@ -342,7 +347,7 @@ static void PlayableSwing()
         if (sim.BatHit) hits++;
         highestExitSpeed = Math.Max(highestExitSpeed, sim.HitExitSpeed ?? 0);
     }
-    Console.WriteLine($"      swing sweep: {hits}/16 bat contacts, maximum exit {highestExitSpeed:0.00} m/s");
+    Console.WriteLine($"      swing sweep: {hits}/21 bat contacts, maximum exit {highestExitSpeed:0.00} m/s");
     Check(hits >= 2, "Bat cannot be reached with ordinary controller swings.");
     Check(highestExitSpeed > 10, "Timed swings cannot produce a useful shot.");
 }
@@ -354,7 +359,7 @@ static void InvulnerableBatter()
     {
         var sim = new Simulation(new());
         Check(sim.Begin(new(32, length, 2.15), out var error), error);
-        for (int i = 0; i < 300; i++)
+        for (int i = 0; i < 450; i++)
         {
             BallState before = sim.Ball;
             sim.Tick(BattingChecks.AtClock(30)); // Hold the bat high, away from the incoming delivery.
@@ -368,7 +373,8 @@ static void InvulnerableBatter()
             overlappingTicks++;
             BallState expected = before;
             for (int substep = 0; substep < sim.Settings.Substeps; substep++)
-                expected = BallFlight.Integrate(expected, SimulationSettings.Tick / sim.Settings.Substeps, sim.Settings);
+                expected = BallFlight.Integrate(expected, SimulationSettings.Tick * sim.Gameplay.BowlingSpeed /
+                    sim.Settings.Substeps, sim.Settings);
             Near(0, (expected.Position - sim.Ball.Position).Length, 1e-9, "unimpeded body crossing position");
             Near(0, (expected.Velocity - sim.Ball.Velocity).Length, 1e-9, "unimpeded body crossing velocity");
             Check(sim.Events.Count == 0, "Visible body produced a collision.");

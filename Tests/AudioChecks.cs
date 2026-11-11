@@ -75,7 +75,7 @@ internal static class AudioChecks
     {
         int bats = 0, wickets = 0, perfect = 0, imperfect = 0;
         var settings = Settings();
-        for (int timing = 150; timing <= 240; timing += 6)
+        for (int timing = 230; timing <= 350; timing += 6)
         {
             var simulation = new Simulation(new());
             Require(simulation.Begin(new(32, 16, 2.15), out _), "Delivery setup failed.");

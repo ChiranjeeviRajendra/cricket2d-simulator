@@ -66,6 +66,8 @@ Bat mass and inertia use published measurements with an explicit grip-axis conve
 
 ## Flight
 
+The released ball advances at the global `GameplaySettings.BowlingSpeed` multiplier until its first positive bat impulse. Main Menu → Settings exposes 0.50×–1.00× in 0.01× steps, defaulting to 0.50×. Only ball travel uses the scaled duration: gravity, drag, spin, rolling and supported surface motion follow the same physical trajectory over proportionally longer gameplay time. Velocity and contact impulses retain their SI values, so displayed speeds and shot response are unchanged. Bat motion, windup, input sampling and `PhaseTime` keep the fixed gameplay timestep. Ground-contact times convert back to gameplay seconds before competing with swept bat/wicket/field contacts. A bat hit restores 1× time for the remainder of that contact substep and all later travel; pitch and wicket contacts retain the selected multiplier. Beginning another delivery clears the existing hit flag and uses the same global preference. No engine time scale or rendering setting changes.
+
 Gravity is constant. Drag is `-0.5 ρ Cd A |v| v`, divided by mass for acceleration. Magnus lift is perpendicular to velocity with a bounded coefficient derived from `ωr/|v|`; it does no instantaneous work. Spin decays exponentially. Seam orientation, turbulence transitions and lateral swing require further models and are not represented.
 
 ## Ground and bat

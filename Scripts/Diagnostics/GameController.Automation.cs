@@ -16,7 +16,7 @@ public partial class GameController
         bool valid = _menu.Visible && !_menu.ShowingPractice && _simulation == null && _menu.UnavailableChoicesDisabled;
         Click("PlayMatch");
         Click("Settings");
-        valid &= !_menu.ShowingPractice && _simulation == null;
+        valid &= await CheckMainSettings();
         Click("Practice");
         valid &= _menu.ShowingPractice && _simulation == null;
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -34,14 +34,17 @@ public partial class GameController
         SmokeButton(JoyButton.DpadDown); // Skip disabled Bowling and select Back.
         SmokeButton(JoyButton.A);
         valid &= !_menu.ShowingPractice;
-        SmokeButton(JoyButton.DpadDown); // Skip disabled Settings and select Exit.
+        SmokeButton(JoyButton.DpadDown); // Settings is now available.
+        SmokeButton(JoyButton.DpadDown); // Exit.
         SmokeButton(JoyButton.A);
         valid &= _smokeExitRequested;
         SmokeButton(JoyButton.DpadUp);
+        SmokeButton(JoyButton.DpadUp); // Return through Settings to Practice.
         SmokeButton(JoyButton.A);
         SmokeButton(JoyButton.A);
         valid &= !_menu.Visible && _simulation != null && _simulation.Phase == DeliveryPhase.Setup && !_hud.DeliveryPanel.Visible;
-        valid &= _audio is { ReadyForPlayback: true };
+        valid &= _audio is { ReadyForPlayback: true } && _simulation != null && ReferenceEquals(_simulation.Gameplay, _gameplay) &&
+            _simulation.Gameplay.BowlingSpeed == .75;
         SmokeKey(Key.Enter);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
         await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
@@ -54,6 +57,7 @@ public partial class GameController
         SmokeButton(JoyButton.A);
         valid &= !_hud.DeliveryPanel.Visible && !_menu.Visible && !_paused && !_hud.PauseMenu.Visible;
         valid &= await CheckDeliveryRequestCancellation();
+        valid &= _simulation?.Gameplay.BowlingSpeed == .75;
         _hud.DeliveryPanel.SetSettings(new PracticeBowlingSettings().WithManualSpeed(115.2) with { RandomPitchLength = false, RandomSpeed = false });
         GD.Print(valid ? "SMOKE PASS: main menu, disabled modes, mouse/keyboard/controller navigation, Back, Exit and Practice > Batting." :
             "SMOKE FAIL: main menu navigation.");
@@ -300,6 +304,11 @@ public partial class GameController
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         DirAccess.MakeDirRecursiveAbsolute(ProjectSettings.GlobalizePath("res://artifacts"));
         SaveCapture("res://artifacts/main-menu.png");
+        _menu.ShowSettings();
+        await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
+        SaveCapture("res://artifacts/main-settings.png");
+        _menu.ShowMain();
+        SmokeButton(JoyButton.DpadDown);
         SmokeButton(JoyButton.DpadDown);
         await ToSignal(RenderingServer.Singleton, RenderingServer.SignalName.FramePostDraw);
         SaveCapture("res://artifacts/main-menu-selected-exit.png");
