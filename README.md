@@ -8,6 +8,8 @@ Double-click **`Play.cmd`**. It finds Godot .NET in your Downloads folder, build
 
 Alternatively, open `project.godot` in the Godot **.NET** editor, build, and press **F6/F5**. Run `Play.cmd` once before the first editor build to copy Godot's local dependency packages.
 
+The field and menus fill the window on widescreen displays. The logical canvas expands with the aspect ratio, preserving player proportions and keeping both wickets visible when resizing or toggling fullscreen.
+
 If Godot has moved:
 
 ```powershell

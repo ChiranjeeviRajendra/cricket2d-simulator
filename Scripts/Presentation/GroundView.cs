@@ -34,7 +34,7 @@ public partial class GroundView : Node2D
     private double RenderFraction => Simulation.Phase == DeliveryPhase.Setup ? 1 :
         _interpolationPaused || _resumeTick == Simulation.TickCount ? _pausedFraction : Engine.GetPhysicsInterpolationFraction();
     public DeliveryPlan? Preview { get => _preview; set { _viewDirty |= !ReferenceEquals(_preview, value); _preview = value; } }
-    private const float GroundY = (float)FieldCamera.GroundY;
+    private float GroundY => (float)_camera.GroundY;
     private readonly FieldCamera _camera = new();
     private float PixelsPerMetre => (float)_camera.PixelsPerMetre;
     private float Zoom => (float)_camera.Zoom;
@@ -56,6 +56,7 @@ public partial class GroundView : Node2D
         _batter = new BatterModel();
         AddChild(_batter);
         GetViewport().SizeChanged += OnViewResized;
+        OnViewResized();
     }
 
     public override void _Process(double delta)
@@ -83,7 +84,12 @@ public partial class GroundView : Node2D
         QueueRedraw();
     }
 
-    private void OnViewResized() => _viewDirty = true;
+    private void OnViewResized()
+    {
+        Vector2 size = GetViewportRect().Size;
+        _camera.SetViewportSize(size.X, size.Y);
+        _viewDirty = true;
+    }
     public override void _ExitTree()
     {
         GetViewport().SizeChanged -= OnViewResized;

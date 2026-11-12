@@ -2,7 +2,17 @@
 
 The runtime targets at least 120 rendered frames per second, without an engine FPS cap while focused. Background rendering is limited to 30 FPS. Losing focus also pauses the simulation. Physics remains at 120 ticks per second with eight substeps; collision accuracy, controls, animation interpolation and field dimensions are unchanged.
 
-Earlier audit sections below retain their original test conditions, including the former 120 FPS cap. The batsman rework section records the current rendering policy and measurements.
+Earlier audit sections below retain their original test conditions, including the former 120 FPS cap and fixed 16:10 gameplay canvas. The batsman rework records the rendering policy; the widescreen section records the current layout and its measurements.
+
+## Widescreen layout — 2026-11-12
+
+`project.godot` now uses `canvas_items` with `expand`, following Godot's [multiple-resolution guidance](https://docs.godotengine.org/en/stable/tutorials/rendering/multiple_resolutions.html). The 1440 × 900 design minimum expands to 1600 × 900 on a 16:9 screen. Both gameplay and benchmarks fill the native 3840 × 2160 target with uniform scaling; the benchmark's separate aspect override was removed.
+
+`FieldCamera` and `FieldLayout` use the actual logical width and height. `GroundView` applies resize events, while `FieldDrawing`, its seating pass and `FieldMesh` update background coverage and culling bounds. The sky fills the screen with proportional cropping. The HUD hint stays anchored to the bottom and the batting lab background fills its viewport. Existing scenery buffers remain cached until framing or viewport dimensions change; no resize polling or new per-frame collections were added. The full-width field draws more pixels than the previous normal-play area, so this is a display fix, not a claimed performance improvement.
+
+Validation: Debug and ExportRelease builds completed with zero warnings/errors; all 73 Release checks passed, including resized shots, both wickets, equal X/Y scales and scenery/physics alignment. Native gameplay smoke checks passed. Its scrolling assertion now permits tall viewports where all controls fit and still checks that the selected slider is visible. Rendered captures verified 1920 × 1080, 2560 × 1080, 1280 × 1024, 1440 × 900, native 4K fullscreen and F11 restoration. `artifacts/layout.log` records output size, logical canvas and scale; `artifacts/layout-*.png` contains the captures.
+
+`artifacts/performance-widescreen.json` records ExportRelease assemblies in the local Godot 4.7.2 .NET runner on the reference Ryzen 7 7800X3D / RTX 4080 SUPER PC, NVIDIA 610.88, Compatibility rendering, verified 3840 × 2160 output, VSync enabled and engine cap zero. Each of eight scenarios warmed up for two seconds and sampled for three seconds. Average FPS ranged from 119.997 to 120.334; p99 frame intervals ranged from 8.403 to 8.433 ms. Live batting's 1% low was 109.91 FPS; other scenarios ranged from 117.41 to 118.68 FPS. Static views recorded zero scenery rebuilds. One collection in each managed generation occurred during settings dragging; other sampling windows recorded none. Working set ranged from 267.8 to 287.9 MiB. No runtime errors were logged. This short run does not establish sustained 4K/120 performance, a perfect frame lock, or a before/after speed improvement; packaged-export and prolonged-session validation remain outstanding.
 
 ## Findings and changes
 

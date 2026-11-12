@@ -18,6 +18,8 @@ internal sealed partial class FieldDrawing : IDisposable
     private FieldSettings Settings => _geometry.Settings;
     private FieldCamera _camera = null!;
     private double _near, _scale = double.NaN, _origin = double.NaN;
+    private Vector2 _viewSize;
+    private Rect2 _skyRegion;
     private Node2D _canvas = null!;
     public int RebuildCount { get; private set; }
 
@@ -47,18 +49,26 @@ internal sealed partial class FieldDrawing : IDisposable
     {
         _canvas = canvas;
         _camera = camera;
-        if (_scale != camera.PixelsPerMetre || _origin != camera.WorldMinX)
+        Vector2 size = new((float)camera.Width, (float)camera.Height);
+        if (_scale != camera.PixelsPerMetre || _origin != camera.WorldMinX || _viewSize != size)
         {
             _scale = camera.PixelsPerMetre; _origin = camera.WorldMinX;
-            _near = FieldLayout.DepthAtScreenY(camera, 980);
-            _background.Clear(); _foreground.Clear();
+            if (_viewSize != size)
+            {
+                _viewSize = size;
+                Vector2 skySize = _sky.GetSize();
+                Vector2 sourceSize = size / Math.Max(size.X / skySize.X, size.Y / skySize.Y);
+                _skyRegion = new((skySize - sourceSize) / 2, sourceSize);
+            }
+            _near = FieldLayout.DepthAtScreenY(camera, size.Y + 80);
+            _background.Clear(size); _foreground.Clear(size);
             Ground();
             foreach (var primitive in _back) Project(primitive, _background);
             foreach (var primitive in _front) Project(primitive, _foreground);
             _background.Upload(); _foreground.Upload();
             RebuildCount++;
         }
-        canvas.DrawTextureRect(_sky, new(0, 0, 1440, 900), false);
+        canvas.DrawTextureRectRegion(_sky, new(Vector2.Zero, size), _skyRegion);
         _background.Draw(canvas);
     }
     public void Foreground() => _foreground.Draw(_canvas);
@@ -67,14 +77,15 @@ internal sealed partial class FieldDrawing : IDisposable
     {
         double far = Settings.Boundary.DepthRadiusMetres + _geometry.OuterBarricadeOffset + 35;
         float horizon = P(new(_geometry.CentreX, far)).Y;
-        for (int i = 0; i < 50; i++)
+        int trees = (int)Math.Ceiling((_viewSize.X + 40) / 31);
+        for (int i = 0; i < trees; i++)
         {
             float x = i * 31 - 20, h = 10 + i * 19 % 17;
             _background.Disc(new(x, horizon - h / 3), h, new("738e82"));
             _background.Disc(new(x + 14, horizon), h * .9f, new("688477"));
         }
         _background.Gradient(horizon, new("789457"), new("496d3d"));
-        double half = 760 / FieldLayout.Scale(_camera, far), middle = (_camera.WorldMinX + _camera.WorldMaxX) / 2;
+        double half = (_viewSize.X / 2 + 40) / FieldLayout.Scale(_camera, far), middle = (_camera.WorldMinX + _camera.WorldMaxX) / 2;
         for (int i = (int)Math.Floor((middle - half) / 5); i < (middle + half) / 5; i++)
         {
             if ((i & 1) == 0) continue;

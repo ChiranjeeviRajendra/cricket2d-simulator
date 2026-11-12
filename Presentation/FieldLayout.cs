@@ -14,9 +14,10 @@ public static class FieldLayout
     public static Vec2 Project(FieldCamera camera, Vec2 ground, double height = 0)
     {
         double scale = Scale(camera, ground.Y), fraction = scale / camera.PixelsPerMetre;
-        return new(720 + (camera.Project(new(ground.X, 0)).X - 720) * fraction,
-            HorizonY + (FieldCamera.GroundY - HorizonY) * fraction - height * scale);
+        double middle = camera.Width / 2;
+        return new(middle + (camera.Project(new(ground.X, 0)).X - middle) * fraction,
+            HorizonY + (camera.GroundY - HorizonY) * fraction - height * scale);
     }
     public static double DepthAtScreenY(FieldCamera camera, double y) =>
-        FocalPixels / camera.PixelsPerMetre * ((FieldCamera.GroundY - HorizonY) / (y - HorizonY) - 1);
+        FocalPixels / camera.PixelsPerMetre * ((camera.GroundY - HorizonY) / (y - HorizonY) - 1);
 }

@@ -83,7 +83,7 @@ internal sealed partial class FieldDrawing
             if (seat.Ground.Y <= _near) continue;
             float scale = (float)FieldLayout.Scale(_camera, seat.Ground.Y);
             Vector2 ground = P(seat.Ground, seat.Height);
-            if (ground.X < -scale || ground.X > 1440 + scale || ground.Y < 0 || ground.Y - scale * 1.4f > 900) continue;
+            if (ground.X < -scale || ground.X > _viewSize.X + scale || ground.Y < 0 || ground.Y - scale * 1.4f > _viewSize.Y) continue;
             Color colour = SeatColours[(seat.Section / 2) % SeatColours.Length];
             Vector2 hip = ground + new Vector2(0, -.5f * scale);
             float width = .23f * scale;
