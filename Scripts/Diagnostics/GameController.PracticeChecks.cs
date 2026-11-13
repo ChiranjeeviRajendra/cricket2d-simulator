@@ -150,7 +150,11 @@ public partial class GameController
         valid &= await WaitForDelivery();
         valid &= bowl.HasFocus();
         await Reveal(height);
-        valid &= scroll.ScrollVertical > 0 && panel.GetGlobalRect().Encloses(bowl.GetGlobalRect()) && !bowl.Disabled;
+        // Expanded tall viewports can fit all controls without scrolling.
+        var scrollbar = scroll.GetVScrollBar();
+        valid &= (scrollbar.MaxValue <= scrollbar.Page || scroll.ScrollVertical > 0) &&
+            scroll.GetGlobalRect().Encloses(height.GetGlobalRect()) &&
+            panel.GetGlobalRect().Encloses(bowl.GetGlobalRect()) && !bowl.Disabled;
         panel.SettingsChanged -= Changed;
         GD.Print(valid ? "SMOKE PASS: bowler categories, random/manual boxes, dropdown, checkboxes, guides, scrolling and sliders." :
             "SMOKE FAIL: practice settings controls.");

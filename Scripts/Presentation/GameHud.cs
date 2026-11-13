@@ -27,9 +27,10 @@ public partial class GameHud : Control
         _maxHeight = Stat("MAX HEIGHT ABOVE GROUND", "0.00 m", 602);
         _fps = Stat("FPS", "—", 790);
         var controls=VisualTheme.Label("LS: 8:30 → 6 → 3 → 12 • A/default: straight  X: wall at 2  B: 1:30 / blade at 4  Y: sky • L1/LB + R1/RB: next ball • Start: pause",15,VisualTheme.OnDark);
-        controls.Position=new(38,852);
         controls.MouseFilter=MouseFilterEnum.Ignore;
         AddChild(controls);
+        controls.SetAnchorsAndOffsetsPreset(LayoutPreset.BottomLeft);
+        controls.Position = new(38, Size.Y - 48);
 
         DeliveryPanel = new DeliveryPanel();
         AddChild(DeliveryPanel);

@@ -68,6 +68,7 @@ var tests = new (string Name, Action Run)[]
     ("Render rates of 30, 60 and 144 Hz yield identical simulation", RenderRates),
     ("Camera fits the ball and both wickets in either direction", CameraFraming),
     ("Camera retains zoom during flight and resets for the next ball", CameraReset),
+    ("Resizing fills the field and preserves proportions and tracked objects", FieldChecks.ViewportSizing),
     ("High shots fit vertically without losing either wicket", HighShotFraming),
     ("Boundary distances and live height are independent of camera zoom", FieldMeasurements),
     ("Configurable oval geometry shares physical crossings and a constant barricade gap", FieldChecks.Layout),
@@ -436,7 +437,7 @@ static void CameraFraming()
             Check(camera.Contains(new(PitchDimensions.WicketSeparation, PitchDimensions.StumpHeight)), "Striker wicket escaped the camera.");
             if (ball.X > PitchDimensions.WicketSeparation)
             {
-                Near(FieldCamera.Right, camera.Project(Vec2.Zero).X, 1e-8, "bowler wicket anchored right");
+                Near(camera.Right, camera.Project(Vec2.Zero).X, 1e-8, "bowler wicket anchored right");
                 Check(camera.Project(ball).X < camera.Project(new(PitchDimensions.WicketSeparation, 0)).X, "Ball must be left of both wickets.");
             }
             if (ball.X < 0)
@@ -463,9 +464,9 @@ static void CameraReset()
         wideScale = camera.PixelsPerMetre;
     }
     camera.Reset();
-    Near(FieldCamera.BasePixelsPerMetre, camera.PixelsPerMetre, 0, "reset scale");
+    Near(camera.BasePixelsPerMetre, camera.PixelsPerMetre, 0, "reset scale");
     Near(FieldCamera.Left, camera.Project(new(PitchDimensions.WicketSeparation, 0)).X, 1e-8, "initial striker position");
-    Near(FieldCamera.Right, camera.Project(Vec2.Zero).X, 1e-8, "initial bowler position");
+    Near(camera.Right, camera.Project(Vec2.Zero).X, 1e-8, "initial bowler position");
 }
 
 static void HighShotFraming()

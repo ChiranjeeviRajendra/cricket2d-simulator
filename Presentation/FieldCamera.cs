@@ -10,16 +10,29 @@ public sealed class FieldCamera
 {
     // Keep wickets near the canvas edges, with room for dislodged bails.
     public const double Left = 24;
-    public const double Right = 1440 - Left;
+    public const double BaseWidth = 1440;
+    public const double BaseHeight = 900;
     public const double Top = 106;
-    public const double GroundY = 760;
     public const double BallPadding = 18;
-    public const double BasePixelsPerMetre = (Right - Left) / PitchDimensions.WicketSeparation;
+    public double Width { get; private set; } = BaseWidth;
+    public double Height { get; private set; } = BaseHeight;
+    public double Right => Width - Left;
+    public double GroundY => Height - 140;
+    public double BasePixelsPerMetre => (Right - Left) / PitchDimensions.WicketSeparation;
 
-    public double PixelsPerMetre { get; private set; } = BasePixelsPerMetre;
+    public double PixelsPerMetre { get; private set; } = (BaseWidth - 2 * Left) / PitchDimensions.WicketSeparation;
     public double WorldMinX { get; private set; }
     public double WorldMaxX => WorldMinX + (Right - Left) / PixelsPerMetre;
     public double Zoom => PixelsPerMetre / BasePixelsPerMetre;
+
+    public void SetViewportSize(double width, double height)
+    {
+        // Expand keeps at least the design canvas; preserve delivery zoom across resizes.
+        double zoom = Zoom;
+        Width = Math.Max(BaseWidth, width);
+        Height = Math.Max(BaseHeight, height);
+        PixelsPerMetre = BasePixelsPerMetre * zoom;
+    }
 
     public void Reset()
     {

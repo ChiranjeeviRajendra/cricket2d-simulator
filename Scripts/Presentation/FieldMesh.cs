@@ -14,6 +14,7 @@ internal sealed class FieldMesh : IDisposable
     private readonly ArrayMesh _mesh = new();
     private int[] _indexBuffer = [];
     private int _vertexCapacity;
+    private Vector2 _viewSize;
     private readonly Texture2D _texture = GD.Load<Texture2D>("res://Assets/Field/crowd.png");
     private static readonly Vector2 White = new(1016 / 1024f, 1272 / 1280f);
     private static readonly Vector2[] Circle = Enumerable.Range(0, 32)
@@ -21,7 +22,7 @@ internal sealed class FieldMesh : IDisposable
 
     private static uint Packed(Color colour) => (uint)colour.R8 | (uint)colour.G8 << 8 | (uint)colour.B8 << 16 | (uint)colour.A8 << 24;
 
-    public void Clear() { _vertices.Clear(); _attributes.Clear(); _indices.Clear(); }
+    public void Clear(Vector2 viewSize) { _viewSize = viewSize; _vertices.Clear(); _attributes.Clear(); _indices.Clear(); }
     public void Polygon(Color colour, ReadOnlySpan<Vector2> points)
     {
         if (points.Length < 3) return;
@@ -31,7 +32,7 @@ internal sealed class FieldMesh : IDisposable
             minX = Math.Min(minX, point.X); maxX = Math.Max(maxX, point.X);
             minY = Math.Min(minY, point.Y); maxY = Math.Max(maxY, point.Y);
         }
-        if (maxX < -30 || minX > 1470 || maxY < 0 || minY > 960) return;
+        if (maxX < -30 || minX > _viewSize.X + 30 || maxY < 0 || minY > _viewSize.Y + 60) return;
         int start = _vertices.Count;
         var attribute = new Attribute(Packed(colour), White);
         foreach (var point in points) { _vertices.Add(point); _attributes.Add(attribute); }
@@ -57,7 +58,7 @@ internal sealed class FieldMesh : IDisposable
     public void Gradient(float top, Color topColour, Color bottomColour)
     {
         int start = _vertices.Count;
-        _vertices.AddRange([new(0, top), new(1440, top), new(1440, 900), new(0, 900)]);
+        _vertices.AddRange([new(0, top), new(_viewSize.X, top), _viewSize, new(0, _viewSize.Y)]);
         var topAttribute = new Attribute(Packed(topColour), White);
         var bottomAttribute = new Attribute(Packed(bottomColour), White);
         _attributes.Add(topAttribute); _attributes.Add(topAttribute); _attributes.Add(bottomAttribute); _attributes.Add(bottomAttribute);
@@ -66,8 +67,8 @@ internal sealed class FieldMesh : IDisposable
 
     public void Line(Vector2 a, Vector2 b, Color colour, float width = 1)
     {
-        if (Math.Max(a.X, b.X) < -30 || Math.Min(a.X, b.X) > 1470 ||
-            Math.Max(a.Y, b.Y) < 0 || Math.Min(a.Y, b.Y) > 960) return;
+        if (Math.Max(a.X, b.X) < -30 || Math.Min(a.X, b.X) > _viewSize.X + 30 ||
+            Math.Max(a.Y, b.Y) < 0 || Math.Min(a.Y, b.Y) > _viewSize.Y + 60) return;
         Vector2 difference = b - a;
         if (difference.LengthSquared() < .000001f) return;
         Vector2 normal = new Vector2(-difference.Y, difference.X).Normalized();
@@ -91,7 +92,7 @@ internal sealed class FieldMesh : IDisposable
 
     public void Disc(Vector2 centre, float radius, Color colour)
     {
-        if (centre.X + radius < -30 || centre.X - radius > 1470 || centre.Y - radius > 960) return;
+        if (centre.X + radius < -30 || centre.X - radius > _viewSize.X + 30 || centre.Y - radius > _viewSize.Y + 60) return;
         Span<Vector2> points = stackalloc Vector2[32];
         for (int i = 0; i < points.Length; i++) points[i] = centre + Circle[i] * radius;
         Polygon(colour, points);

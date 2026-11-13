@@ -11,6 +11,45 @@ internal static class FieldChecks
     private static double Energy(BallState b, SimulationSettings s) =>
         .5 * s.BallMass * b.Velocity.LengthSquared + .2 * s.BallMass * s.BallRadius * s.BallRadius * b.Spin * b.Spin;
 
+    public static void ViewportSizing()
+    {
+        // Logical canvas sizes for 16:10, 16:9, ultrawide and 4:3 displays.
+        Vec2[] sizes = [new(1440, 900), new(1600, 900), new(2400, 900), new(1440, 1080)];
+        var camera = new FieldCamera();
+        foreach (Vec2 size in sizes)
+        {
+            camera.SetViewportSize(size.X, size.Y);
+            camera.Reset();
+            Near(24, camera.Project(new(PitchDimensions.WicketSeparation, 0)).X, 1e-8, "Left wicket inset");
+            Near(size.X - 24, camera.Project(Vec2.Zero).X, 1e-8, "Right wicket follows viewport edge");
+            Near(size.Y - 140, camera.Project(Vec2.Zero).Y, 1e-8, "Ground follows viewport bottom");
+            Vec2 origin = camera.Project(Vec2.Zero);
+            Near(origin.X - camera.Project(new(1, 0)).X, origin.Y - camera.Project(new(0, 1)).Y,
+                1e-8, "Equal horizontal and vertical metre scale preserves anatomy");
+            foreach (Vec2 ball in new Vec2[] { new(-120, 40), new(150, 100), new(10, 180) })
+            {
+                camera.Reset(); camera.Fit(ball);
+                foreach (Vec2 resized in sizes)
+                {
+                    double zoom = camera.Zoom;
+                    camera.SetViewportSize(resized.X, resized.Y);
+                    Near(zoom, camera.Zoom, 1e-12, "Resize retains delivery zoom");
+                    camera.Fit(ball);
+                    Check(camera.Contains(ball) && camera.Contains(Vec2.Zero) &&
+                        camera.Contains(new(PitchDimensions.WicketSeparation, PitchDimensions.StumpHeight)),
+                        "Resizing a tracked shot must retain the ball and both wickets");
+                    Vec2 physical = camera.Project(ball);
+                    Vec2 scenery = FieldLayout.Project(camera, new(ball.X, 0), ball.Y);
+                    Near(physical.X, scenery.X, 1e-8, "Scenery and physics align horizontally after resize");
+                    Near(physical.Y, scenery.Y, 1e-8, "Scenery and physics align vertically after resize");
+                    double depth = FieldLayout.DepthAtScreenY(camera, resized.Y + 80);
+                    Near(resized.Y + 80, FieldLayout.Project(camera, new(0, depth)).Y,
+                        1e-8, "Foreground extends below the resized viewport");
+                }
+            }
+        }
+    }
+
     public static void Layout()
     {
         var settings = FieldSettings.FromJson(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Config", "field.json")));
@@ -42,7 +81,7 @@ internal static class FieldChecks
                     Near(side == 1 ? geometry.LeftX : geometry.RightX, point.X, 1e-12, "Oval physical crossing");
                     Vec2 screen = FieldLayout.Project(camera, point);
                     Near(camera.Project(new(point.X, 0)).X, screen.X, 1e-9, "Visible/physical X");
-                    Near(FieldCamera.GroundY, screen.Y, 1e-9, "Ground contact Y");
+                    Near(camera.GroundY, screen.Y, 1e-9, "Ground contact Y");
                     Vec2 outer = geometry.OvalPoint(side == 1 ? 0 : Math.PI, geometry.OuterBarricadeOffset);
                     double wallX = (side == 1 ? geometry.LeftX : geometry.RightX) + side * geometry.OuterBarricadeOffset;
                     Vec2 top = FieldLayout.Project(camera, outer, geometry.Settings.OuterBarricade.HeightMetres);

@@ -41,9 +41,6 @@ internal partial class PerformanceRun(Simulation simulation, GroundView ground, 
 
     public override void _Ready()
     {
-        // Exercise every output pixel, including the side margins that normal
-        // gameplay preserves for its 16:10 artwork. Diagnostic process only.
-        GetWindow().ContentScaleAspect = Window.ContentScaleAspectEnum.Ignore;
         foreach (string arg in OS.GetCmdlineUserArgs())
         {
             if (arg.StartsWith("--performance-output=")) _output = "res://" + arg.Split('=', 2)[1];
